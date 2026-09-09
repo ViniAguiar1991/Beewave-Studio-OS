@@ -1,0 +1,6 @@
+{
+  "name": "BeeWave OS - Marketing & Task Studio",
+  "description": "Plataforma moderna de gestão de tarefas, workflow criativo de social media com IA, gestão de clientes, modo escuro e sincronização em nuvem.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
