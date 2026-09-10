@@ -39,7 +39,7 @@ export function isDateBeforeToday(dateStr?: string | null): boolean {
  * Determines if a task is delayed (has a date before today and is not concluded or approved).
  * Se a tarefa está aprovada ou postada, não classificar como atrasada.
  */
-export function isTaskDelayed(task: { status?: string; artDate?: string | null; postDate?: string | null }): boolean {
+export function isTaskDelayed(task: { status?: string; postDate?: string | null; artDate?: string | null }): boolean {
   if (!task) return false;
   const s = (task.status || '').toLowerCase().trim();
   if (
@@ -57,7 +57,7 @@ export function isTaskDelayed(task: { status?: string; artDate?: string | null; 
   ) {
     return false;
   }
-  return isDateBeforeToday(task.artDate) || isDateBeforeToday(task.postDate);
+  return isDateBeforeToday(task.postDate);
 }
 
 /**

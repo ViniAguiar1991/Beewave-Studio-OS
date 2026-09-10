@@ -4,6 +4,7 @@ import {
   Search,
   Kanban,
   List,
+  Calendar,
   CalendarDays,
   GripVertical,
   ChevronLeft,
@@ -20,6 +21,7 @@ import {
   SlidersHorizontal,
   Download,
   Image as ImageIcon,
+  Save,
 } from 'lucide-react';
 import {
   format,
@@ -44,8 +46,9 @@ import { ptBR } from 'date-fns/locale';
 import { useAppStore, useCurrentUser } from '../store';
 import { getStatusBadgeStyle, getStatusLabel, getFormatLabel } from '../utils/badgeStyles';
 import { formatFriendlyDate, formatStandardDate, formatFullBadgeDate, getDateDisplayPair, isTaskDelayed, isDateBeforeToday } from '../utils/dateFormatter';
-import { TaskStatusKey, TaskStatus, Task } from '../types';
+import { TaskStatusKey, TaskStatus, Task, TableViewConfig } from '../types';
 import { TaskStatusButton } from './TaskStatusButton';
+import { syncTableViewConfigToCloud } from '../services/firestoreSync';
 
 interface TasksListViewProps {
   onSelectTask: (taskId: string) => void;
@@ -61,9 +64,9 @@ export type ColumnId =
   | 'category'
   | 'assignee'
   | 'status'
+  | 'postDate'
   | 'unifiedDate'
-  | 'artDate'
-  | 'postDate';
+  | 'artDate';
 
 export interface TableColumnDef {
   id: ColumnId;
@@ -72,15 +75,13 @@ export interface TableColumnDef {
 }
 
 export const ALL_AVAILABLE_COLUMNS: TableColumnDef[] = [
-  { id: 'client', label: 'Cliente', minWidth: '150px' },
-  { id: 'title', label: 'Tarefa', minWidth: '220px' },
-  { id: 'attachments', label: 'Arte / Anexo', minWidth: '115px' },
-  { id: 'category', label: 'Formato', minWidth: '110px' },
-  { id: 'assignee', label: 'Responsável', minWidth: '160px' },
-  { id: 'status', label: 'Status', minWidth: '160px' },
-  { id: 'unifiedDate', label: 'Datas (Arte e Publicação)', minWidth: '175px' },
-  { id: 'artDate', label: 'Data da Arte', minWidth: '145px' },
-  { id: 'postDate', label: 'Data da Publicação', minWidth: '145px' },
+  { id: 'client', label: 'Cliente', minWidth: '105px' },
+  { id: 'title', label: 'Tarefa', minWidth: '120px' },
+  { id: 'attachments', label: 'Arte', minWidth: '48px' },
+  { id: 'category', label: 'Formato', minWidth: '80px' },
+  { id: 'assignee', label: 'Responsável', minWidth: '105px' },
+  { id: 'status', label: 'Status', minWidth: '115px' },
+  { id: 'postDate', label: 'Data da Publicação', minWidth: '110px' },
 ];
 
 export const DEFAULT_VISIBLE_COLUMN_IDS: ColumnId[] = [
@@ -90,8 +91,32 @@ export const DEFAULT_VISIBLE_COLUMN_IDS: ColumnId[] = [
   'category',
   'assignee',
   'status',
-  'unifiedDate',
+  'postDate',
 ];
+
+export const DEFAULT_COLUMN_WIDTHS: Record<ColumnId, number> = {
+  client: 190,
+  title: 340,
+  attachments: 72,
+  category: 125,
+  assignee: 165,
+  status: 155,
+  postDate: 150,
+  unifiedDate: 150,
+  artDate: 135,
+};
+
+export const MIN_COLUMN_WIDTHS: Record<ColumnId, number> = {
+  client: 110,
+  title: 150,
+  attachments: 55,
+  category: 85,
+  assignee: 110,
+  status: 120,
+  postDate: 100,
+  unifiedDate: 100,
+  artDate: 100,
+};
 
 const PRESET_COLUMN_COLORS = [
   { hex: '#64748b', name: 'Ardósia' },
@@ -207,14 +232,17 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   const selectedAssigneeId = taskFilters?.selectedAssigneeId ?? 'all';
   const selectedStatusDropdown = taskFilters?.selectedStatusDropdown ?? 'all';
   const selectedDateFilter = taskFilters?.selectedDateFilter ?? 'all';
-  const dateSortType = taskFilters?.dateSortType ?? 'artDate';
+  const dateSortType = taskFilters?.dateSortType ?? 'postDate';
 
   // Table Columns Drag & Drop Order & Customization
   const [tableColumns, setTableColumns] = useState<TableColumnDef[]>(() => {
     try {
       const savedOrder = localStorage.getItem('beewave_table_columns_order');
       if (savedOrder) {
-        const parsed: ColumnId[] = JSON.parse(savedOrder);
+        const parsedRaw: ColumnId[] = JSON.parse(savedOrder);
+        const parsed = Array.from(
+          new Set(parsedRaw.map((id) => (id === 'unifiedDate' || id === 'artDate' ? 'postDate' : id)))
+        ) as ColumnId[];
         const map = new Map(ALL_AVAILABLE_COLUMNS.map((c) => [c.id, c]));
         const ordered = parsed.map((id) => map.get(id)).filter(Boolean) as TableColumnDef[];
         ALL_AVAILABLE_COLUMNS.forEach((c) => {
@@ -238,12 +266,18 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     try {
       const saved = localStorage.getItem('beewave_visible_columns_v4');
       if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        const parsedRaw = JSON.parse(saved);
+        if (Array.isArray(parsedRaw) && parsedRaw.length > 0) {
+          const parsed = Array.from(
+            new Set(parsedRaw.map((id) => (id === 'unifiedDate' || id === 'artDate' ? 'postDate' : id)))
+          ) as ColumnId[];
           if (!parsed.includes('attachments')) {
             const tIdx = parsed.indexOf('title');
             if (tIdx >= 0) parsed.splice(tIdx + 1, 0, 'attachments');
             else parsed.push('attachments');
+          }
+          if (!parsed.includes('postDate')) {
+            parsed.push('postDate');
           }
           return parsed;
         }
@@ -263,6 +297,152 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       localStorage.setItem('beewave_table_columns_order', JSON.stringify(tableColumns.map((c) => c.id)));
     } catch {}
   }, [tableColumns]);
+
+  // Shared Cloud Table View Configuration (Admin custom layout for everyone)
+  const tableViewConfig = useAppStore((s) => s.tableViewConfig);
+
+  // Column widths state (Excel / Notion style resizable columns)
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnId, number>>(() => {
+    try {
+      const saved = localStorage.getItem('beewave_table_column_widths_v2');
+      if (saved) {
+        return { ...DEFAULT_COLUMN_WIDTHS, ...JSON.parse(saved) };
+      }
+    } catch {}
+    return DEFAULT_COLUMN_WIDTHS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('beewave_table_column_widths_v2', JSON.stringify(columnWidths));
+    } catch {}
+  }, [columnWidths]);
+
+  // Automatically sync table layout when received from Firestore
+  useEffect(() => {
+    if (!tableViewConfig) return;
+    if (tableViewConfig.columnWidths && typeof tableViewConfig.columnWidths === 'object') {
+      setColumnWidths((prev) => ({ ...prev, ...tableViewConfig.columnWidths }));
+    }
+    if (Array.isArray(tableViewConfig.visibleColumnIds) && tableViewConfig.visibleColumnIds.length > 0) {
+      const sanitized = Array.from(
+        new Set(
+          (tableViewConfig.visibleColumnIds as string[]).map((id) =>
+            id === 'unifiedDate' || id === 'artDate' ? 'postDate' : id
+          )
+        )
+      ) as ColumnId[];
+      setVisibleColumnIds(sanitized);
+    }
+    if (Array.isArray(tableViewConfig.columnOrder) && tableViewConfig.columnOrder.length > 0) {
+      const sanitizedOrder = Array.from(
+        new Set(
+          (tableViewConfig.columnOrder as string[]).map((id) =>
+            id === 'unifiedDate' || id === 'artDate' ? 'postDate' : id
+          )
+        )
+      ) as ColumnId[];
+      const map = new Map(ALL_AVAILABLE_COLUMNS.map((c) => [c.id, c]));
+      const ordered = sanitizedOrder
+        .map((id) => map.get(id))
+        .filter(Boolean) as TableColumnDef[];
+      ALL_AVAILABLE_COLUMNS.forEach((c) => {
+        if (!ordered.some((o) => o.id === c.id)) ordered.push(c);
+      });
+      setTableColumns(ordered);
+    }
+  }, [tableViewConfig]);
+
+  // Notion / Excel column resize handler
+  const resizingColRef = useRef<{ colId: ColumnId; startX: number; startWidth: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [activeResizeColId, setActiveResizeColId] = useState<ColumnId | null>(null);
+
+  const handleResizeStart = (colId: ColumnId, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentWidth = columnWidths[colId] || DEFAULT_COLUMN_WIDTHS[colId] || 150;
+    resizingColRef.current = {
+      colId,
+      startX: e.clientX,
+      startWidth: currentWidth,
+    };
+    setIsResizing(true);
+    setActiveResizeColId(colId);
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizingColRef.current) return;
+      const { colId, startX, startWidth } = resizingColRef.current;
+      const minW = MIN_COLUMN_WIDTHS[colId] || 70;
+      const delta = e.clientX - startX;
+      const newWidth = Math.max(minW, Math.min(1000, startWidth + delta));
+      setColumnWidths((prev) => ({
+        ...prev,
+        [colId]: newWidth,
+      }));
+    };
+
+    const handleMouseUp = () => {
+      resizingColRef.current = null;
+      setIsResizing(false);
+      setActiveResizeColId(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
+
+  // Check if admin has unsaved changes compared to cloud configuration
+  const isViewModified = React.useMemo(() => {
+    if (!tableViewConfig) {
+      const isDefaultCols =
+        visibleColumnIds.length === DEFAULT_VISIBLE_COLUMN_IDS.length &&
+        visibleColumnIds.every((id, idx) => id === DEFAULT_VISIBLE_COLUMN_IDS[idx]);
+      const isDefaultWidths = Object.entries(columnWidths).every(([k, v]) => {
+        return Math.abs((DEFAULT_COLUMN_WIDTHS[k as ColumnId] || 150) - v) < 2;
+      });
+      return !isDefaultCols || !isDefaultWidths;
+    }
+    const colsChanged =
+      JSON.stringify(visibleColumnIds) !== JSON.stringify(tableViewConfig.visibleColumnIds);
+    const orderChanged =
+      JSON.stringify(tableColumns.map((c) => c.id)) !== JSON.stringify(tableViewConfig.columnOrder);
+    const widthsChanged = Object.entries(columnWidths).some(([k, v]) => {
+      const cloudW = tableViewConfig.columnWidths?.[k] ?? DEFAULT_COLUMN_WIDTHS[k as ColumnId] ?? 150;
+      return Math.abs(cloudW - v) > 5;
+    });
+    return colsChanged || orderChanged || widthsChanged;
+  }, [visibleColumnIds, tableColumns, columnWidths, tableViewConfig]);
+
+  // Admin Save View for All state & handler
+  const [isSavingView, setIsSavingView] = useState(false);
+  const [saveSuccessToast, setSaveSuccessToast] = useState(false);
+
+  const handleSaveViewForAll = async () => {
+    if (currentUser?.role !== 'admin') return;
+    setIsSavingView(true);
+    const config: TableViewConfig = {
+      visibleColumnIds,
+      columnOrder: tableColumns.map((c) => c.id),
+      columnWidths,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser?.name || 'Administrador',
+    };
+    const success = await syncTableViewConfigToCloud(config);
+    setIsSavingView(false);
+    if (success) {
+      setSaveSuccessToast(true);
+      setTimeout(() => setSaveSuccessToast(false), 4500);
+    }
+  };
 
   // Preview & Download Modal State for Art Attachments
   const [previewModalData, setPreviewModalData] = useState<{ task: Task; fileIndex: number } | null>(null);
@@ -337,8 +517,34 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   };
 
   const handleResetColumns = () => {
-    setVisibleColumnIds(DEFAULT_VISIBLE_COLUMN_IDS);
-    setTableColumns(ALL_AVAILABLE_COLUMNS);
+    if (tableViewConfig) {
+      if (Array.isArray(tableViewConfig.visibleColumnIds) && tableViewConfig.visibleColumnIds.length > 0) {
+        setVisibleColumnIds(tableViewConfig.visibleColumnIds as ColumnId[]);
+      } else {
+        setVisibleColumnIds(DEFAULT_VISIBLE_COLUMN_IDS);
+      }
+      if (Array.isArray(tableViewConfig.columnOrder) && tableViewConfig.columnOrder.length > 0) {
+        const map = new Map(ALL_AVAILABLE_COLUMNS.map((c) => [c.id, c]));
+        const ordered = (tableViewConfig.columnOrder as ColumnId[])
+          .map((id) => map.get(id))
+          .filter(Boolean) as TableColumnDef[];
+        ALL_AVAILABLE_COLUMNS.forEach((c) => {
+          if (!ordered.some((o) => o.id === c.id)) ordered.push(c);
+        });
+        setTableColumns(ordered);
+      } else {
+        setTableColumns(ALL_AVAILABLE_COLUMNS);
+      }
+      if (tableViewConfig.columnWidths && typeof tableViewConfig.columnWidths === 'object') {
+        setColumnWidths({ ...DEFAULT_COLUMN_WIDTHS, ...tableViewConfig.columnWidths });
+      } else {
+        setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+      }
+    } else {
+      setVisibleColumnIds(DEFAULT_VISIBLE_COLUMN_IDS);
+      setTableColumns(ALL_AVAILABLE_COLUMNS);
+      setColumnWidths(DEFAULT_COLUMN_WIDTHS);
+    }
   };
 
   const [draggedColId, setDraggedColId] = useState<ColumnId | null>(null);
@@ -372,7 +578,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   const [editColumnColor, setEditColumnColor] = useState('');
 
   // Calendar Date Navigation
-  const [calendarDate, setCalendarDate] = useState(new Date(2026, 7, 1)); // August 2026
+  const [calendarDate, setCalendarDate] = useState(() => new Date());
 
   // Listen to Global Spacebar for Photoshop-like Pan
   useEffect(() => {
@@ -471,12 +677,10 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         return false;
       }
 
-      // 6. Date Filter (based on selected dateSortType: artDate or postDate)
+      // 6. Date Filter (based on postDate)
       if (selectedDateFilter !== 'all') {
         const today = startOfToday();
-        const effectiveDateStr = dateSortType === 'artDate'
-          ? (t.artDate || t.postDate)
-          : (t.postDate || t.artDate);
+        const effectiveDateStr = t.postDate;
         const taskDate = effectiveDateStr ? parseISO(effectiveDateStr) : null;
 
         if (!taskDate) {
@@ -516,9 +720,8 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       return true;
     })
     .sort((a, b) => {
-      const isArt = dateSortType === 'artDate';
-      const dateA = isArt ? (a.artDate || a.postDate) : (a.postDate || a.artDate);
-      const dateB = isArt ? (b.artDate || b.postDate) : (b.postDate || b.artDate);
+      const dateA = a.postDate;
+      const dateB = b.postDate;
 
       // Tasks without date always stay at the end of the queue, but remain visible
       if (!dateA && !dateB) {
@@ -655,7 +858,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     setCalendarDragOverDate(null);
     const taskId = e.dataTransfer.getData('task-id') || e.dataTransfer.getData('text/plain') || draggedTaskId;
     if (taskId) {
-      updateTask(taskId, { postDate: targetDateStr, artDate: targetDateStr });
+      updateTask(taskId, { postDate: targetDateStr });
     }
     setDraggedTaskId(null);
   };
@@ -839,9 +1042,54 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
                         );
                       })}
                     </div>
+
+                    {/* Admin: Salvar para todos button in popover */}
+                    {currentUser?.role === 'admin' && (
+                      <div className="pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleSaveViewForAll();
+                            setShowColumnSelector(false);
+                          }}
+                          disabled={isSavingView}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-all cursor-pointer shadow-xs active:scale-95"
+                        >
+                          <Save className="h-3.5 w-3.5" />
+                          <span>{isSavingView ? 'Salvando...' : 'Salvar visualização para todos'}</span>
+                        </button>
+                        <p className="text-[10px] text-center text-slate-400 dark:text-slate-500">
+                          Aplica esta visualização como padrão para todos
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Admin: Salvar para todos Button (Toolbar) */}
+            {viewMode === 'list' && currentUser?.role === 'admin' && (
+              <button
+                id="btn-save-view-for-all"
+                type="button"
+                onClick={handleSaveViewForAll}
+                disabled={isSavingView}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border shadow-xs cursor-pointer ${
+                  isViewModified
+                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-500 shadow-amber-500/20 ring-2 ring-amber-500/20 active:scale-95'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+                title="Salvar a visualização da tabela (colunas visíveis, ordem e larguras) como padrão para todos os membros da agência"
+              >
+                <Save className={`h-3.5 w-3.5 ${isViewModified ? 'text-slate-950' : 'text-amber-500'}`} />
+                <span>Salvar para todos</span>
+                {isViewModified && (
+                  <span className="ml-0.5 rounded-full bg-slate-950 text-amber-400 px-1.5 py-0.2 text-[9px] font-black uppercase tracking-wider">
+                    Modificado
+                  </span>
+                )}
+              </button>
             )}
 
             <button
@@ -907,7 +1155,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         </div>
 
         {/* Row 2: Search Input & Dropdowns (Standard clean dropdown list) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 pt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 pt-2">
           {/* Search Box */}
           <div className="relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 dark:text-slate-400" />
@@ -997,19 +1245,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
               <option value="sem_data">Sem data</option>
             </select>
           </div>
-
-          {/* Organizar por Dropdown (sem emojis) */}
-          <div>
-            <select
-              id="select-sort-order"
-              value={dateSortType}
-              onChange={(e) => setTaskFilters({ dateSortType: e.target.value as 'artDate' | 'postDate' })}
-              className="clean-input h-11 w-full px-3 text-xs font-medium text-slate-900 dark:text-white cursor-pointer"
-            >
-              <option value="artDate">Organizar por: Data da Arte</option>
-              <option value="postDate">Organizar por: Data da Publicação</option>
-            </select>
-          </div>
         </div>
 
         {/* Counter Info */}
@@ -1020,10 +1255,8 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             </span>
             <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
             <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
-              <span>Organizado por:</span>
-              <strong className="text-slate-900 dark:text-white font-bold">
-                {dateSortType === 'artDate' ? 'Data da Arte' : 'Data da Publicação'}
-              </strong>
+              <Calendar className="h-3 w-3 text-slate-400" />
+              <span>Ordem cronológica por Data da Publicação</span>
             </span>
           </div>
 
@@ -1039,324 +1272,350 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       </div>
 
       {/* ========================================================================= */}
-      {/* 1. LIST VIEW (Default View) */}
+      {/* 1. LIST VIEW (Loose Excel / Notion data grid with resizable columns) */}
       {/* ========================================================================= */}
       {viewMode === 'list' && (
-        <div className="clean-card overflow-hidden">
-          <div className="overflow-x-auto pb-2">
-            {(() => {
-              const visibleColumns = tableColumns.filter((c) => visibleColumnIds.includes(c.id));
-              return (
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="border-b border-slate-200 dark:border-slate-800 bg-slate-100/80 dark:bg-slate-900/80 text-[11px] font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 select-none">
-                    <tr>
-                      {visibleColumns.map((col) => {
-                        let colTitle = col.label;
-                        if (col.id === 'unifiedDate') colTitle = 'Datas';
-                        if (col.id === 'artDate') colTitle = 'Data da Arte';
-                        if (col.id === 'postDate') colTitle = 'Data da Publicação';
-                        if (col.id === 'attachments') colTitle = 'Arte';
+        <div className={`w-full overflow-x-auto border-t border-b sm:border sm:rounded-xl border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 transition-all shadow-2xs ${
+          isResizing ? 'select-none cursor-col-resize' : ''
+        }`}>
+          {(() => {
+            const visibleColumns = tableColumns
+              .filter((c) => visibleColumnIds.includes(c.id))
+              .map((c) => {
+                const def = ALL_AVAILABLE_COLUMNS.find((a) => a.id === c.id);
+                return def ? { ...c, label: def.label } : c;
+              });
 
-                        return (
-                          <th
-                            key={col.id}
-                            draggable
-                            onDragStart={() => handleColDragStart(col.id)}
-                            onDragOver={(e) => handleColDragOver(e, col.id)}
-                            className={`px-5 py-4 cursor-grab active:cursor-grabbing transition-colors group ${
-                              draggedColId === col.id ? 'opacity-40 bg-slate-200 dark:bg-slate-800' : ''
-                            }`}
-                            style={{ minWidth: col.minWidth }}
-                            title="Clique e arraste para reorganizar esta coluna"
-                          >
-                            <div className="flex items-center gap-1.5">
-                              <GripVertical className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                              <span>{colTitle}</span>
-                            </div>
-                          </th>
-                        );
-                      })}
-                      <th className="px-4 py-4 text-right w-12 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Ação
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800">
-                    {filteredTasks.map((task) => {
-                      const client = clients.find((c) => c.id === task.clientId);
-                      const category = categories.find((cat) => cat.id === task.categoryId);
-                      const taskAssigneeIds = task.assigneeIds && task.assigneeIds.length > 0
-                        ? task.assigneeIds
-                        : task.assigneeId
-                        ? [task.assigneeId]
-                        : [];
-                      const assigneeUsers = taskAssigneeIds
-                        .map((uid) => users.find((u) => u.id === uid))
-                        .filter(Boolean) as typeof users;
-                      const badge = getStatusBadgeStyle(task.status);
-                      const isAlert = task.status === 'alterar';
-                      const isDelayed = isTaskDelayed(task);
-                      const isArtDelayed = isDateBeforeToday(task.artDate) && task.status !== 'postado';
-                      const isPostDelayed = isDateBeforeToday(task.postDate) && task.status !== 'postado';
+            return (
+              <table className="w-full text-left text-xs border-collapse table-fixed select-text">
+                <colgroup>
+                  {visibleColumns.map((col) => (
+                    <col
+                      key={col.id}
+                      style={{
+                        width: `${columnWidths[col.id] || DEFAULT_COLUMN_WIDTHS[col.id] || 150}px`,
+                      }}
+                    />
+                  ))}
+                  <col style={{ width: '60px' }} />
+                  <col className="w-auto" />
+                </colgroup>
+                <thead className="border-b border-slate-200/90 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/95 text-xs font-semibold text-slate-600 dark:text-slate-400 select-none sticky top-0 z-10 backdrop-blur-xs">
+                  <tr>
+                    {visibleColumns.map((col) => {
+                      let colTitle = col.label;
+                      if (col.id === 'postDate' || col.id === 'unifiedDate' || col.id === 'artDate') {
+                        colTitle = 'Data da Publicação';
+                      }
+                      if (col.id === 'attachments') colTitle = 'Arte';
+                      const isArteCol = col.id === 'attachments';
+                      const currentWidth = columnWidths[col.id] || DEFAULT_COLUMN_WIDTHS[col.id] || 150;
 
                       return (
-                        <tr
-                          key={task.id}
-                          onClick={() => onSelectTask(task.id)}
-                          className={`cursor-pointer transition-colors group ${
-                            isDelayed
-                              ? 'bg-amber-500/[0.04] dark:bg-amber-500/[0.06] hover:bg-amber-500/[0.08] dark:hover:bg-amber-500/[0.10]'
-                              : 'hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
+                        <th
+                          key={col.id}
+                          draggable={!isResizing}
+                          onDragStart={() => handleColDragStart(col.id)}
+                          onDragOver={(e) => handleColDragOver(e, col.id)}
+                          className={`relative px-3.5 py-3 cursor-grab active:cursor-grabbing transition-colors group ${
+                            isArteCol ? 'text-center' : ''
+                          } ${
+                            draggedColId === col.id ? 'opacity-40 bg-slate-200 dark:bg-slate-800' : 'hover:bg-slate-100/60 dark:hover:bg-slate-800/40'
                           }`}
+                          style={{ width: `${currentWidth}px` }}
+                          title="Clique e arraste para reorganizar, ou use a borda direita para redimensionar"
                         >
-                          {visibleColumns.map((col) => {
-                            if (col.id === 'client') {
-                              return (
-                                <td key={col.id} className="px-5 py-4 font-bold text-slate-900 dark:text-white">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-base">{client?.emoji || '🏢'}</span>
-                                    <span className="truncate">{client?.company || 'Cliente'}</span>
-                                  </div>
-                                </td>
-                              );
-                            }
+                          <div className={`flex items-center gap-1.5 ${isArteCol ? 'justify-center' : ''} pr-1`}>
+                            {!isArteCol && (
+                              <GripVertical className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                            )}
+                            <span className="font-semibold truncate text-[11px] uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                              {colTitle}
+                            </span>
+                          </div>
 
-                            if (col.id === 'title') {
-                              const isLiveEditing =
-                                task.editingBy &&
-                                Date.now() - new Date(task.editingBy.updatedAt).getTime() < 120000;
-                              return (
-                                <td key={col.id} className="px-5 py-4 font-medium text-slate-900 dark:text-white max-w-sm">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="truncate font-semibold">{task.title}</span>
-                                    {isLiveEditing && (
-                                      <span
-                                        className="shrink-0 inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse"
-                                        title={`${task.editingBy?.userName} está editando agora`}
-                                      >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                        <span>Editando: {task.editingBy?.userName.split(' ')[0]}</span>
-                                      </span>
-                                    )}
-                                    {isDelayed && (
-                                      <span
-                                        className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
-                                        title="Data anterior a hoje - tarefa atrasada"
-                                      >
-                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                        <span>Atrasado</span>
-                                      </span>
-                                    )}
-                                    {isAlert && (
-                                      <span className="shrink-0 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 px-2 py-0.5 text-[10px] font-bold">
-                                        Ajuste
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'attachments') {
-                              const imageFiles = (task.files || []).filter((f) => f.dataUrl || f.url);
-                              const firstImage = imageFiles[0];
-
-                              return (
-                                <td
-                                  key={col.id}
-                                  className="px-5 py-3 whitespace-nowrap"
-                                  onClick={(e) => {
-                                    if (imageFiles.length > 0) {
-                                      e.stopPropagation();
-                                      setPreviewModalData({ task, fileIndex: 0 });
-                                    }
-                                  }}
-                                >
-                                  {imageFiles.length > 0 ? (
-                                    <div
-                                      className="inline-flex items-center gap-2.5 group/art cursor-pointer"
-                                      title="Clique para abrir e baixar a arte"
-                                    >
-                                      <div className="relative h-10 w-10 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-2xs group-hover/art:ring-2 group-hover/art:ring-sky-500 group-hover/art:scale-105 transition-all shrink-0">
-                                        <img
-                                          src={firstImage.dataUrl || firstImage.url}
-                                          alt={firstImage.name || 'Arte'}
-                                          className="h-full w-full object-cover"
-                                        />
-                                        {imageFiles.length > 1 && (
-                                          <span className="absolute bottom-0 right-0 bg-slate-900/90 text-white font-extrabold text-[8px] px-1 rounded-tl">
-                                            +{imageFiles.length - 1}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <div className="flex flex-col text-[11px] leading-tight">
-                                        <span className="font-bold text-slate-700 dark:text-slate-300 group-hover/art:text-sky-600 dark:group-hover/art:text-sky-400">
-                                          {imageFiles.length} {imageFiles.length === 1 ? 'arte' : 'artes'}
-                                        </span>
-                                        <span className="text-[10px] text-sky-600 dark:text-sky-400 font-medium">Ver / Baixar</span>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-1.5 text-slate-300 dark:text-slate-600 text-xs select-none" title="Sem arte anexada">
-                                      <ImageIcon className="h-4 w-4 stroke-1 opacity-40" />
-                                      <span className="text-[11px]">—</span>
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'category') {
-                              return (
-                                <td key={col.id} className="px-5 py-4 text-slate-600 dark:text-slate-300">
-                                  <span className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50 dark:bg-slate-950/40 text-[11px] font-medium">
-                                    {getFormatLabel(task, categories)}
-                                  </span>
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'assignee') {
-                              return (
-                                <td key={col.id} className="px-5 py-4 text-slate-900 dark:text-white font-medium whitespace-nowrap">
-                                  {assigneeUsers.length > 1 ? (
-                                    <div className="flex items-center gap-2">
-                                      <div className="flex -space-x-1.5 overflow-hidden">
-                                        {assigneeUsers.map((u) => (
-                                          <div
-                                            key={u.id}
-                                            className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900 shadow-2xs shrink-0"
-                                            style={{ backgroundColor: u.color || '#64748b' }}
-                                            title={u.name}
-                                          >
-                                            {u.name.charAt(0)}
-                                          </div>
-                                        ))}
-                                      </div>
-                                      <span
-                                        className="text-xs text-slate-700 dark:text-slate-300 truncate max-w-[120px]"
-                                        title={assigneeUsers.map((u) => u.name).join(', ')}
-                                      >
-                                        {assigneeUsers.map((u) => u.name.split(' ')[0]).join(', ')}
-                                      </span>
-                                    </div>
-                                  ) : assigneeUsers.length === 1 ? (
-                                    <div className="flex items-center gap-2">
-                                      <div
-                                        className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold text-white shadow-2xs shrink-0"
-                                        style={{ backgroundColor: assigneeUsers[0].color || '#64748b' }}
-                                      >
-                                        {assigneeUsers[0].name.charAt(0)}
-                                      </div>
-                                      <span className="truncate text-xs">{assigneeUsers[0].name}</span>
-                                    </div>
-                                  ) : (
-                                    <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-                                      <UserIcon className="h-3.5 w-3.5" />
-                                      <span>Não atribuído</span>
-                                    </div>
-                                  )}
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'status') {
-                              return (
-                                <td key={col.id} className="px-5 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                                  <TaskStatusButton taskId={task.id} status={task.status} size="sm" />
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'unifiedDate') {
-                              return (
-                                <td key={col.id} className="px-5 py-3.5 whitespace-nowrap text-xs">
-                                  <div className="flex flex-col gap-1.5 leading-tight">
-                                    {/* Arte - Label e Data */}
-                                    <div className="flex flex-col">
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                                        Arte
-                                      </span>
-                                      <span className={`text-xs font-semibold ${isArtDelayed ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-900 dark:text-white'}`}>
-                                        {formatFriendlyDate(task.artDate, false)}
-                                      </span>
-                                    </div>
-
-                                    {/* Publicação - Label e Data */}
-                                    <div className="flex flex-col">
-                                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                                        Publicação
-                                      </span>
-                                      <span className={`text-xs font-semibold ${isPostDelayed ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-900 dark:text-white'}`}>
-                                        {formatFriendlyDate(task.postDate, false)}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'artDate') {
-                              return (
-                                <td key={col.id} className="px-5 py-4 whitespace-nowrap text-xs">
-                                  <span className={`font-semibold ${isArtDelayed ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-900 dark:text-white'}`}>
-                                    {formatFriendlyDate(task.artDate, false)}
-                                  </span>
-                                </td>
-                              );
-                            }
-
-                            if (col.id === 'postDate') {
-                              return (
-                                <td key={col.id} className="px-5 py-4 whitespace-nowrap text-xs">
-                                  <span className={`font-semibold ${isPostDelayed ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-900 dark:text-white'}`}>
-                                    {formatFriendlyDate(task.postDate, false)}
-                                  </span>
-                                </td>
-                              );
-                            }
-
-                            return null;
-                          })}
-                          <td className="px-4 py-4 text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDuplicateTask(task);
-                                }}
-                                className="opacity-60 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-sky-600 p-1.5 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-all cursor-pointer"
-                                title="Duplicar tarefa"
-                              >
-                                <Copy className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteTask(task);
-                                }}
-                                className="opacity-60 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer"
-                                title="Excluir tarefa (Lixeira)"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                          {/* Notion/Excel Resizer Handle - Invisible at rest, clean hover indicator */}
+                          <div
+                            role="separator"
+                            aria-orientation="vertical"
+                            onMouseDown={(e) => handleResizeStart(col.id, e)}
+                            onClick={(e) => e.stopPropagation()}
+                            onDoubleClick={(e) => {
+                              e.stopPropagation();
+                              setColumnWidths((prev) => ({
+                                ...prev,
+                                [col.id]: DEFAULT_COLUMN_WIDTHS[col.id] || 150,
+                              }));
+                            }}
+                            className="absolute -right-1 top-0 bottom-0 w-2.5 cursor-col-resize z-20 select-none flex items-center justify-center hover:bg-amber-500/10 active:bg-amber-500/20 group/resizer"
+                            title="Arraste para redimensionar (duplo clique restaura padrão)"
+                          >
+                            <div
+                              className={`w-[1.5px] transition-all ${
+                                activeResizeColId === col.id
+                                  ? 'h-full bg-amber-500 shadow-xs'
+                                  : 'h-0 bg-transparent group-hover/resizer:h-4/5 group-hover/resizer:bg-amber-500/60'
+                              }`}
+                            />
+                          </div>
+                        </th>
                       );
                     })}
-                    {filteredTasks.length === 0 && (
-                      <tr>
-                        <td colSpan={visibleColumns.length + 1} className="py-16 text-center text-xs text-slate-400 dark:text-slate-500">
-                          Nenhuma tarefa encontrada com os filtros selecionados.
+                    <th className="px-2 py-3 text-right w-[60px] text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                      Ação
+                    </th>
+                    <th className="p-0 border-none w-auto" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/60 dark:divide-slate-800">
+                  {filteredTasks.map((task) => {
+                    const client = clients.find((c) => c.id === task.clientId);
+                    const category = categories.find((cat) => cat.id === task.categoryId);
+                    const taskAssigneeIds = task.assigneeIds && task.assigneeIds.length > 0
+                      ? task.assigneeIds
+                      : task.assigneeId
+                      ? [task.assigneeId]
+                      : [];
+                    const assigneeUsers = taskAssigneeIds
+                      .map((uid) => users.find((u) => u.id === uid))
+                      .filter(Boolean) as typeof users;
+                    const badge = getStatusBadgeStyle(task.status);
+                    const isAlert = task.status === 'alterar';
+                    const isDelayed = isTaskDelayed(task);
+                    const isPostDelayed = isDateBeforeToday(task.postDate) && task.status !== 'postado';
+
+                    return (
+                      <tr
+                        key={task.id}
+                        onClick={() => onSelectTask(task.id)}
+                        className={`cursor-pointer transition-colors group ${
+                          isDelayed
+                            ? 'bg-amber-500/[0.04] dark:bg-amber-500/[0.06] hover:bg-amber-500/[0.08] dark:hover:bg-amber-500/[0.10]'
+                            : 'hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
+                        }`}
+                      >
+                        {visibleColumns.map((col) => {
+                          if (col.id === 'client') {
+                            return (
+                              <td key={col.id} className="px-3.5 py-3 font-bold text-slate-900 dark:text-white whitespace-nowrap overflow-hidden">
+                                <div className="flex items-center gap-2 overflow-hidden w-full" title={client?.company || 'Cliente'}>
+                                  <span className="text-base shrink-0">{client?.emoji || '🏢'}</span>
+                                  <span className="truncate text-sm font-semibold">{client?.company || 'Cliente'}</span>
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          if (col.id === 'title') {
+                            const isLiveEditing =
+                              task.editingBy &&
+                              Date.now() - new Date(task.editingBy.updatedAt).getTime() < 120000;
+                            return (
+                              <td key={col.id} className="px-3.5 py-3 font-medium text-slate-900 dark:text-white overflow-hidden">
+                                <div className="flex flex-col gap-1 w-full overflow-hidden">
+                                  <span
+                                    className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 break-words leading-snug whitespace-normal"
+                                    title={task.title}
+                                  >
+                                    {task.title}
+                                  </span>
+                                  {(isLiveEditing || isDelayed || isAlert) && (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {isLiveEditing && (
+                                        <span
+                                          className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30 animate-pulse"
+                                          title={`${task.editingBy?.userName} está editando agora`}
+                                        >
+                                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                          <span>Editando: {task.editingBy?.userName.split(' ')[0]}</span>
+                                        </span>
+                                      )}
+                                      {isDelayed && (
+                                        <span
+                                          className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/30"
+                                          title="Data anterior a hoje - tarefa atrasada"
+                                        >
+                                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                          <span>Atrasado</span>
+                                        </span>
+                                      )}
+                                      {isAlert && (
+                                        <span className="shrink-0 rounded-full bg-rose-500/10 border border-rose-500/30 text-rose-600 dark:text-rose-400 px-1.5 py-0.5 text-[10px] font-bold">
+                                          Ajuste
+                                        </span>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          if (col.id === 'attachments') {
+                            const imageFiles = (task.files || []).filter((f) => f.dataUrl || f.url);
+                            const firstImage = imageFiles[0];
+
+                            return (
+                              <td
+                                key={col.id}
+                                className="px-2 py-3 text-center whitespace-nowrap"
+                                onClick={(e) => {
+                                  if (imageFiles.length > 0) {
+                                    e.stopPropagation();
+                                    setPreviewModalData({ task, fileIndex: 0 });
+                                  }
+                                }}
+                              >
+                                {imageFiles.length > 0 ? (
+                                  <div
+                                    className="inline-flex items-center justify-center group/art cursor-pointer"
+                                    title={`${imageFiles.length} ${imageFiles.length === 1 ? 'arte anexada' : 'artes anexadas'} • Clique para visualizar e baixar`}
+                                  >
+                                    <div className="relative h-9 w-9 rounded-lg overflow-hidden border border-slate-200/80 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 shadow-2xs group-hover/art:ring-2 group-hover/art:ring-amber-500 group-hover/art:scale-105 transition-all shrink-0">
+                                      <img
+                                        src={firstImage.dataUrl || firstImage.url}
+                                        alt={firstImage.name || 'Arte'}
+                                        className="h-full w-full object-cover"
+                                        loading="lazy"
+                                      />
+                                      {imageFiles.length > 1 && (
+                                        <span className="absolute bottom-0 right-0 bg-slate-900/90 text-white font-extrabold text-[8px] px-1 rounded-tl leading-none">
+                                          +{imageFiles.length - 1}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-300 dark:text-slate-700 text-sm select-none">—</span>
+                                )}
+                              </td>
+                            );
+                          }
+
+                          if (col.id === 'category') {
+                            return (
+                              <td key={col.id} className="px-3.5 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap overflow-hidden">
+                                <span
+                                  className="rounded-md border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-50 dark:bg-slate-950/40 text-xs font-medium truncate inline-block max-w-full"
+                                  title={getFormatLabel(task, categories)}
+                                >
+                                  {getFormatLabel(task, categories)}
+                                </span>
+                              </td>
+                            );
+                          }
+
+                          if (col.id === 'assignee') {
+                            return (
+                              <td key={col.id} className="px-3.5 py-3 text-slate-900 dark:text-white font-medium whitespace-nowrap overflow-hidden">
+                                {assigneeUsers.length > 1 ? (
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <div className="flex -space-x-1.5 overflow-hidden shrink-0">
+                                      {assigneeUsers.map((u) => (
+                                        <div
+                                          key={u.id}
+                                          className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold text-white ring-2 ring-white dark:ring-slate-900 shadow-2xs shrink-0"
+                                          style={{ backgroundColor: u.color || '#64748b' }}
+                                          title={u.name}
+                                        >
+                                          {u.name.charAt(0)}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <span
+                                      className="text-xs text-slate-700 dark:text-slate-300 truncate max-w-full"
+                                      title={assigneeUsers.map((u) => u.name).join(', ')}
+                                    >
+                                      {assigneeUsers.map((u) => u.name.split(' ')[0]).join(', ')}
+                                    </span>
+                                  </div>
+                                ) : assigneeUsers.length === 1 ? (
+                                  <div className="flex items-center gap-2 overflow-hidden">
+                                    <div
+                                      className="grid h-6 w-6 place-items-center rounded-full text-[10px] font-bold text-white shadow-2xs shrink-0"
+                                      style={{ backgroundColor: assigneeUsers[0].color || '#64748b' }}
+                                    >
+                                      {assigneeUsers[0].name.charAt(0)}
+                                    </div>
+                                    <span className="truncate text-xs font-medium text-slate-800 dark:text-slate-200 max-w-full" title={assigneeUsers[0].name}>
+                                      {assigneeUsers[0].name}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 text-xs select-none">—</span>
+                                )}
+                              </td>
+                            );
+                          }
+
+                          if (col.id === 'status') {
+                            return (
+                              <td key={col.id} className="px-3.5 py-3 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <TaskStatusButton taskId={task.id} status={task.status} size="sm" />
+                              </td>
+                            );
+                          }
+
+                          if (col.id === 'postDate' || col.id === 'unifiedDate' || col.id === 'artDate') {
+                            return (
+                              <td key={col.id} className="px-3.5 py-3 whitespace-nowrap text-xs overflow-hidden">
+                                {task.postDate ? (
+                                  <span
+                                    className={`font-semibold text-xs truncate block ${
+                                      isPostDelayed ? 'text-amber-600 dark:text-amber-400 font-bold' : 'text-slate-900 dark:text-white'
+                                    }`}
+                                    title={formatFullBadgeDate(task.postDate)}
+                                  >
+                                    {formatFriendlyDate(task.postDate, false)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-xs select-none">—</span>
+                                )}
+                              </td>
+                            );
+                          }
+
+                          return null;
+                        })}
+                        <td className="px-2 py-3 text-right whitespace-nowrap w-[60px]" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDuplicateTask(task);
+                              }}
+                              className="opacity-50 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-sky-600 p-1.5 rounded-lg hover:bg-sky-50 dark:hover:bg-sky-950/40 transition-all cursor-pointer"
+                              title="Duplicar tarefa"
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteTask(task);
+                              }}
+                              className="opacity-50 group-hover:opacity-100 hover:opacity-100 text-slate-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer"
+                              title="Excluir tarefa (Lixeira)"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </td>
+                        <td className="p-0 border-none w-auto" />
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              );
-            })()}
-          </div>
+                    );
+                  })}
+                  {filteredTasks.length === 0 && (
+                    <tr>
+                      <td colSpan={visibleColumns.length + 2} className="py-16 text-center text-xs text-slate-400 dark:text-slate-500">
+                        Nenhuma tarefa encontrada com os filtros selecionados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            );
+          })()}
         </div>
       )}
 
@@ -1523,7 +1782,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
                         .filter(Boolean) as typeof users;
                       const isAlert = task.status === 'alterar';
                       const isDelayed = isTaskDelayed(task);
-                      const isArtDelayed = isDateBeforeToday(task.artDate) && task.status !== 'postado';
                       const isPostDelayed = isDateBeforeToday(task.postDate) && task.status !== 'postado';
                       const badge = getStatusBadgeStyle(task.status);
                       const isBeingDragged = draggedTaskId === task.id;
@@ -1628,22 +1886,9 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
                             )}
                           </div>
 
-                          {task.artDate && (
+                          {task.postDate ? (
                             <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                              <span>Arte:</span>
-                              <span className={`font-semibold ${
-                                isArtDelayed
-                                  ? 'text-amber-700 dark:text-amber-400 font-bold'
-                                  : 'text-slate-800 dark:text-slate-200'
-                              }`}>
-                                {formatFullBadgeDate(task.artDate)}
-                              </span>
-                            </div>
-                          )}
-
-                          {task.postDate && (
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between">
-                              <span>Postagem:</span>
+                              <span>Publicação:</span>
                               <strong className={`${
                                 isPostDelayed
                                   ? 'text-amber-700 dark:text-amber-400 font-bold'
@@ -1652,11 +1897,9 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
                                 {formatStandardDate(task.postDate)}
                               </strong>
                             </div>
-                          )}
-
-                          {!task.artDate && !task.postDate && (
+                          ) : (
                             <div className="text-[10px] text-slate-400 dark:text-slate-500 flex items-center justify-between italic">
-                              <span>Prazo:</span>
+                              <span>Publicação:</span>
                               <span className="font-medium">Sem data</span>
                             </div>
                           )}
@@ -1744,9 +1987,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
                 const isCurrentDay = isToday(day);
                 const isCalendarDayDropActive = calendarDragOverDate === dayStr;
 
-                const dayTasks = filteredTasks.filter(
-                  (t) => t.postDate === dayStr || t.artDate === dayStr
-                );
+                const dayTasks = filteredTasks.filter((t) => t.postDate === dayStr);
 
                 return (
                   <div
@@ -2172,6 +2413,27 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
           </div>
         );
       })()}
+
+      {/* Save Table View For All Toast */}
+      {saveSuccessToast && (
+        <div className="fixed bottom-6 left-6 z-50 flex items-center gap-3 bg-slate-900 text-white dark:bg-white dark:text-slate-900 px-4 py-3 rounded-2xl shadow-2xl border border-slate-700 dark:border-slate-300 text-xs font-semibold animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="grid h-6 w-6 place-items-center rounded-full bg-emerald-500 text-slate-950 font-bold shrink-0">
+            <Check className="h-3.5 w-3.5" strokeWidth={3} />
+          </div>
+          <div className="flex flex-col">
+            <span className="font-bold">Visualização salva com sucesso!</span>
+            <span className="text-[11px] text-slate-300 dark:text-slate-600 font-normal">
+              Esta organização de colunas e larguras agora é o padrão de todos na agência.
+            </span>
+          </div>
+          <button
+            onClick={() => setSaveSuccessToast(false)}
+            className="p-1 text-slate-400 hover:text-white dark:hover:text-slate-900 cursor-pointer ml-2"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Floating Undo / Duplicate Toast */}
       {trashToast && (

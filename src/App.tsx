@@ -154,9 +154,7 @@ export function App() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        if (activeWorkflowTaskId) {
-          setActiveWorkflowTaskId(null);
-        } else if (isCloudModalOpen) {
+        if (!activeWorkflowTaskId && isCloudModalOpen) {
           setIsCloudModalOpen(false);
         }
       }
@@ -450,7 +448,7 @@ export function App() {
           {currentTab === 'calendario' && (
             <CalendarView
               onSelectTask={(tId) => setActiveWorkflowTaskId(tId)}
-              onNewTaskOnDate={(dateStr) => handleOpenNewTask({ postDate: dateStr, artDate: dateStr })}
+              onNewTaskOnDate={(dateStr) => handleOpenNewTask({ postDate: dateStr })}
             />
           )}
 

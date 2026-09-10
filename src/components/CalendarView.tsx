@@ -30,7 +30,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onSelectTask,
   onNewTaskOnDate,
 }) => {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 7, 1)); // August 2026
+  const [currentDate, setCurrentDate] = useState(() => new Date());
   const [selectedClientId, setSelectedClientId] = useState('all');
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
@@ -72,7 +72,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     setDragOverDate(null);
     const taskId = e.dataTransfer.getData('task-id') || e.dataTransfer.getData('text/plain') || draggedTaskId;
     if (taskId) {
-      updateTask(taskId, { postDate: targetDateStr, artDate: targetDateStr });
+      updateTask(taskId, { postDate: targetDateStr });
     }
     setDraggedTaskId(null);
   };
@@ -144,7 +144,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           {days.map((day) => {
             const dateStr = format(day, 'yyyy-MM-dd');
             const dayTasks = filteredTasks.filter(
-              (t) => t.postDate === dateStr || t.artDate === dateStr
+              (t) => t.postDate === dateStr
             );
             const isCurrentMonth = isSameMonth(day, currentDate);
             const isTodayDay = isToday(day);

@@ -9,7 +9,7 @@ import {
   onSnapshot,
 } from '../firebase';
 import { useAppStore } from '../store';
-import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing } from '../types';
+import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig } from '../types';
 import { uploadTaskFileToCloud, deleteTaskFileFromCloud } from './taskFileCloudSync';
 
 let isListening = false;
@@ -122,8 +122,8 @@ export function initFirestoreSync() {
       if (tasks.length > 0) {
         // Tasks with dates first (chronological), tasks without date at the end of queue
         tasks.sort((a, b) => {
-          const dateA = a.artDate || a.postDate;
-          const dateB = b.artDate || b.postDate;
+          const dateA = a.postDate;
+          const dateB = b.postDate;
           if (!dateA && !dateB) {
             return (b.createdAt || '').localeCompare(a.createdAt || '');
           }
@@ -199,6 +199,19 @@ export function initFirestoreSync() {
       console.warn('Firestore agencyConfig listener note:', error.message);
     });
 
+    // 7. Listen to Shared Table View Configuration (Admin custom columns & widths)
+    const tableViewConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'tableViewConfig');
+    onSnapshot(tableViewConfigDocRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const config = docSnap.data() as TableViewConfig;
+        if (config && Array.isArray(config.visibleColumnIds)) {
+          useAppStore.setState({ tableViewConfig: config });
+        }
+      }
+    }, (error) => {
+      console.warn('Firestore tableViewConfig listener note:', error.message);
+    });
+
     // Update cloud sync status
     useAppStore.setState((s) => ({
       cloudSync: {
@@ -213,6 +226,26 @@ export function initFirestoreSync() {
     console.error('Error initializing Firestore sync:', err);
   }
 }
+
+/**
+ * Saves Admin Table View Configuration (Visible columns, order, and column widths) to Firestore
+ */
+export async function syncTableViewConfigToCloud(config: TableViewConfig) {
+  try {
+    const configRef = doc(db, COLLECTIONS.APP_CONFIG, 'tableViewConfig');
+    const cleanData = sanitizeForFirestore({
+      ...config,
+      updatedAt: new Date().toISOString(),
+    });
+    await setDoc(configRef, cleanData, { merge: true });
+    useAppStore.setState({ tableViewConfig: config });
+    return true;
+  } catch (err) {
+    console.error('Error saving tableViewConfig to Firestore:', err);
+    return false;
+  }
+}
+
 
 /**
  * Saves Admin System Prompts directly to Firestore

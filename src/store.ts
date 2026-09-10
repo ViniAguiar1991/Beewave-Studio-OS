@@ -31,6 +31,7 @@ import {
   CustomService,
   AdminSystemPrompts,
   TaskLiveEditing,
+  TableViewConfig,
 } from './types';
 
 export const DEFAULT_ADMIN_PROMPTS: AdminSystemPrompts = {
@@ -77,7 +78,7 @@ export const INITIAL_TASK_FILTERS: TaskFiltersState = {
   selectedAssigneeId: 'all',
   selectedStatusDropdown: 'all',
   selectedDateFilter: 'all',
-  dateSortType: 'artDate',
+  dateSortType: 'postDate',
 };
 
 export const INITIAL_STATUSES: TaskStatus[] = [
@@ -558,6 +559,10 @@ interface BeeWaveState {
   setTaskFilters: (filters: Partial<TaskFiltersState>) => void;
   resetTaskFilters: () => void;
 
+  // Table View Configuration (Shared admin layout)
+  tableViewConfig: TableViewConfig | null;
+  setTableViewConfig: (config: TableViewConfig | null) => void;
+
   // Cloud Services
   cloudSync: CloudSyncInfo;
   syncWithCloud: () => Promise<void>;
@@ -577,6 +582,9 @@ export const useAppStore = create<BeeWaveState>()(
           taskFilters: { ...state.taskFilters, ...filters },
         })),
       resetTaskFilters: () => set({ taskFilters: INITIAL_TASK_FILTERS }),
+
+      tableViewConfig: null,
+      setTableViewConfig: (config) => set({ tableViewConfig: config }),
 
       // Appearance defaults (clean light mode with linear gradient by default)
       darkMode: false,
@@ -917,25 +925,25 @@ export const useAppStore = create<BeeWaveState>()(
 
         const newTask: Task = {
           id: `task_${Date.now().toString(36)}`,
-          clientId: get().clients[0]?.id || 'c_zaffari',
-          title: 'Nova Tarefa',
-          categoryId: resolvedCategory,
-          copyMode: resolvedCopyMode,
-          assigneeId: assigneeIds[0] || defaultAssignee,
-          assigneeIds,
-          funnelStage: 'meio',
-          channel: 'instagram',
-          artDate: new Date().toISOString().split('T')[0],
-          postDate: new Date().toISOString().split('T')[0],
-          status: 'nao_iniciado',
+          clientId: data.clientId || '',
+          title: data.title || 'Nova tarefa',
+          categoryId: data.categoryId || '',
+          copyMode: data.copyMode || undefined,
+          assigneeId: (data.assigneeIds && data.assigneeIds[0]) || data.assigneeId || '',
+          assigneeIds: data.assigneeIds || (data.assigneeId ? [data.assigneeId] : []),
+          funnelStage: data.funnelStage || undefined,
+          channel: data.channel || 'instagram',
+          postDate: data.postDate || '',
+          status: data.status || 'nao_iniciado',
+          driveLink: data.driveLink || '',
           currentStep: 'briefing',
-          briefingText: '',
+          briefingText: data.briefingText || '',
           headlineOptions: [],
-          caption: '',
+          caption: data.caption || '',
           carouselSlides: [],
           scriptText: '',
           approvedCopySections: {},
-          files: [],
+          files: data.files || [],
           briefingFiles: data.briefingFiles || [],
           timeSpent: 0,
           timerStartedAt: null,

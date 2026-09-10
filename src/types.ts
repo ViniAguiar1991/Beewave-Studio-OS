@@ -199,6 +199,7 @@ export interface Task {
   artDate?: string;
   postDate?: string;
   status: TaskStatusKey;
+  driveLink?: string;
   
   // Interactive Step-by-Step Workflow state (as in Tarefas.png ~ Tarefas-3.png)
   currentStep: WorkflowStep;
@@ -290,6 +291,14 @@ export interface TaskFiltersState {
   selectedStatusDropdown: string;
   selectedDateFilter: string;
   dateSortType?: 'artDate' | 'postDate';
+}
+
+export interface TableViewConfig {
+  visibleColumnIds: string[];
+  columnOrder: string[];
+  columnWidths: Record<string, number>;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface AiChatMessage {
