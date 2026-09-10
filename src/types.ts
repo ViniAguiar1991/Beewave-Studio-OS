@@ -290,6 +290,8 @@ export interface TaskFiltersState {
   selectedAssigneeId: string;
   selectedStatusDropdown: string;
   selectedDateFilter: string;
+  customDateFrom?: string;
+  customDateTo?: string;
   dateSortType?: 'artDate' | 'postDate';
 }
 

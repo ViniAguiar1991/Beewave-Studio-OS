@@ -78,6 +78,8 @@ export const INITIAL_TASK_FILTERS: TaskFiltersState = {
   selectedAssigneeId: 'all',
   selectedStatusDropdown: 'all',
   selectedDateFilter: 'all',
+  customDateFrom: '',
+  customDateTo: '',
   dateSortType: 'postDate',
 };
 

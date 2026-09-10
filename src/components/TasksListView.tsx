@@ -9,6 +9,8 @@ import {
   GripVertical,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  Eye,
   Edit2,
   Trash2,
   Copy,
@@ -232,6 +234,8 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   const selectedAssigneeId = taskFilters?.selectedAssigneeId ?? 'all';
   const selectedStatusDropdown = taskFilters?.selectedStatusDropdown ?? 'all';
   const selectedDateFilter = taskFilters?.selectedDateFilter ?? 'all';
+  const customDateFrom = taskFilters?.customDateFrom ?? '';
+  const customDateTo = taskFilters?.customDateTo ?? '';
   const dateSortType = taskFilters?.dateSortType ?? 'postDate';
 
   // Table Columns Drag & Drop Order & Customization
@@ -490,22 +494,22 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [previewModalData]);
 
-  const [showColumnSelector, setShowColumnSelector] = useState(false);
-  const columnSelectorRef = useRef<HTMLDivElement | null>(null);
+  const [showViewMenu, setShowViewMenu] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (columnSelectorRef.current && !columnSelectorRef.current.contains(e.target as Node)) {
-        setShowColumnSelector(false);
+      if (viewMenuRef.current && !viewMenuRef.current.contains(e.target as Node)) {
+        setShowViewMenu(false);
       }
     };
-    if (showColumnSelector) {
+    if (showViewMenu) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showColumnSelector]);
+  }, [showViewMenu]);
 
   const handleToggleColumn = (colId: ColumnId) => {
     if (visibleColumnIds.includes(colId)) {
@@ -701,6 +705,17 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         } else if (selectedDateFilter === 'atrasados') {
           if (!isBefore(taskDate, today) || t.status === 'aprovado' || t.status === 'postado') {
             return false;
+          }
+        } else if (selectedDateFilter === 'personalizado') {
+          if (customDateFrom) {
+            const fromDate = parseISO(customDateFrom);
+            fromDate.setHours(0, 0, 0, 0);
+            if (taskDate < fromDate) return false;
+          }
+          if (customDateTo) {
+            const toDate = parseISO(customDateTo);
+            toDate.setHours(23, 59, 59, 999);
+            if (taskDate > toDate) return false;
           }
         }
       }
@@ -936,175 +951,142 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
-            {/* View Mode Toggle: Lista, Kanban, Calendário */}
-            <div className="flex items-center rounded-xl border border-slate-200 dark:border-slate-800 p-1 bg-slate-100/80 dark:bg-slate-900/80">
+          <div className="flex items-center gap-2">
+            {/* Consolidated View Configurations Button (Eye icon) */}
+            <div className="relative" ref={viewMenuRef}>
               <button
-                id="btn-view-list"
-                onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'list'
-                    ? 'bg-white dark:bg-white text-slate-900 dark:text-slate-900 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <List className="h-4 w-4" />
-                <span>Lista</span>
-              </button>
-
-              <button
-                id="btn-view-kanban"
-                onClick={() => setViewMode('kanban')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'kanban'
-                    ? 'bg-white dark:bg-white text-slate-900 dark:text-slate-900 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <Kanban className="h-4 w-4" />
-                <span>Kanban</span>
-              </button>
-
-              <button
-                id="btn-view-calendar"
-                onClick={() => setViewMode('calendar')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                  viewMode === 'calendar'
-                    ? 'bg-white dark:bg-white text-slate-900 dark:text-slate-900 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
-                }`}
-              >
-                <CalendarDays className="h-4 w-4" />
-                <span>Calendário</span>
-              </button>
-            </div>
-
-            {/* Seleção de campos (Colunas da Tabela) */}
-            {viewMode === 'list' && (
-              <div className="relative" ref={columnSelectorRef}>
-                <button
-                  id="btn-column-selector"
-                  type="button"
-                  onClick={() => setShowColumnSelector(!showColumnSelector)}
-                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
-                    showColumnSelector
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
-                      : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
-                  }`}
-                  title="Personalizar colunas visíveis na tabela"
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  <span>Campos</span>
-                  <span className="ml-0.5 rounded-full bg-slate-200/80 dark:bg-slate-800 px-1.5 py-0.2 text-[10px] font-bold">
-                    {visibleColumnIds.length}
-                  </span>
-                </button>
-
-                {showColumnSelector && (
-                  <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl z-[100] p-3.5 animate-in fade-in zoom-in-95 duration-100">
-                    <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 dark:border-slate-800">
-                      <span className="text-xs font-bold text-slate-900 dark:text-white">
-                        Seleção de Campos
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleResetColumns}
-                        className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
-                      >
-                        Padrão
-                      </button>
-                    </div>
-
-                    <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2.5">
-                      Selecione os campos visíveis na tabela:
-                    </p>
-
-                    <div className="space-y-1">
-                      {ALL_AVAILABLE_COLUMNS.map((col) => {
-                        const isChecked = visibleColumnIds.includes(col.id);
-                        return (
-                          <label
-                            key={col.id}
-                            className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-100/70 dark:hover:bg-slate-800/70 cursor-pointer text-xs select-none transition-colors"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => handleToggleColumn(col.id)}
-                                className="rounded border-slate-300 dark:border-slate-700 text-slate-900 focus:ring-slate-900 dark:focus:ring-white h-4 w-4 cursor-pointer"
-                              />
-                              <span className={`text-xs ${isChecked ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>
-                                {col.label}
-                              </span>
-                            </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-
-                    {/* Admin: Salvar para todos button in popover */}
-                    {currentUser?.role === 'admin' && (
-                      <div className="pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-1.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            handleSaveViewForAll();
-                            setShowColumnSelector(false);
-                          }}
-                          disabled={isSavingView}
-                          className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-all cursor-pointer shadow-xs active:scale-95"
-                        >
-                          <Save className="h-3.5 w-3.5" />
-                          <span>{isSavingView ? 'Salvando...' : 'Salvar visualização para todos'}</span>
-                        </button>
-                        <p className="text-[10px] text-center text-slate-400 dark:text-slate-500">
-                          Aplica esta visualização como padrão para todos
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Admin: Salvar para todos Button (Toolbar) */}
-            {viewMode === 'list' && currentUser?.role === 'admin' && (
-              <button
-                id="btn-save-view-for-all"
+                id="btn-view-configs-eye"
                 type="button"
-                onClick={handleSaveViewForAll}
-                disabled={isSavingView}
-                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all border shadow-xs cursor-pointer ${
-                  isViewModified
-                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-500 shadow-amber-500/20 ring-2 ring-amber-500/20 active:scale-95'
+                onClick={() => setShowViewMenu(!showViewMenu)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer ${
+                  showViewMenu
+                    ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white shadow-xs'
                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
-                title="Salvar a visualização da tabela (colunas visíveis, ordem e larguras) como padrão para todos os membros da agência"
+                title="Configurações de visualização (Lista, Kanban, Calendário e Campos)"
               >
-                <Save className={`h-3.5 w-3.5 ${isViewModified ? 'text-slate-950' : 'text-amber-500'}`} />
-                <span>Salvar para todos</span>
-                {isViewModified && (
-                  <span className="ml-0.5 rounded-full bg-slate-950 text-amber-400 px-1.5 py-0.2 text-[9px] font-black uppercase tracking-wider">
-                    Modificado
-                  </span>
-                )}
+                <Eye className="h-4 w-4" />
+                <span className="capitalize">{viewMode === 'list' ? 'Lista' : viewMode === 'kanban' ? 'Kanban' : 'Calendário'}</span>
+                <ChevronDown className="h-3 w-3 opacity-60" />
               </button>
-            )}
 
-            <button
-              id="btn-add-task-main"
-              onClick={onNewTask}
-              className="flex items-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-bold px-4 py-2.5 text-xs shadow-sm transition-all active:scale-95 whitespace-nowrap cursor-pointer"
-            >
-              <Plus className="h-4 w-4" strokeWidth={2.4} />
-              <span>Nova Tarefa</span>
-            </button>
+              {showViewMenu && (
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl z-[100] p-3.5 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="pb-2 mb-2 border-b border-slate-100 dark:border-slate-800">
+                    <span className="text-xs font-bold text-slate-900 dark:text-white">
+                      Modo de Visualização
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1.5 mb-3">
+                    <button
+                      id="btn-view-list"
+                      onClick={() => {
+                        setViewMode('list');
+                      }}
+                      className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        viewMode === 'list'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <List className="h-4 w-4" />
+                      <span className="text-[11px]">Lista</span>
+                    </button>
+
+                    <button
+                      id="btn-view-kanban"
+                      onClick={() => {
+                        setViewMode('kanban');
+                      }}
+                      className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        viewMode === 'kanban'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <Kanban className="h-4 w-4" />
+                      <span className="text-[11px]">Kanban</span>
+                    </button>
+
+                    <button
+                      id="btn-view-calendar"
+                      onClick={() => {
+                        setViewMode('calendar');
+                      }}
+                      className={`flex flex-col items-center justify-center gap-1.5 p-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        viewMode === 'calendar'
+                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-xs'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                      }`}
+                    >
+                      <CalendarDays className="h-4 w-4" />
+                      <span className="text-[11px]">Calendário</span>
+                    </button>
+                  </div>
+
+                  {viewMode === 'list' && (
+                    <>
+                      <div className="flex items-center justify-between pb-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">
+                          Campos da Tabela
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleResetColumns}
+                          className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+                        >
+                          Padrão
+                        </button>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                        Selecione as colunas visíveis:
+                      </p>
+
+                      <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                        {ALL_AVAILABLE_COLUMNS.map((col) => {
+                          const isChecked = visibleColumnIds.includes(col.id);
+                          return (
+                            <label
+                              key={col.id}
+                              className="flex items-center justify-between p-1.5 rounded-lg hover:bg-slate-100/70 dark:hover:bg-slate-800/70 cursor-pointer text-xs select-none transition-colors"
+                            >
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleColumn(col.id)}
+                                  className="rounded border-slate-300 dark:border-slate-700 text-slate-900 focus:ring-slate-900 dark:focus:ring-white h-3.5 w-3.5 cursor-pointer"
+                                />
+                                <span className={`text-xs ${isChecked ? 'font-semibold text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-400'}`}>
+                                  {col.label}
+                                </span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Row 1: Top Quick Filter Pills (Monochromatic neutral style) */}
+        {/* Row 1: Quick Actions & Filter Pills */}
         <div className="flex flex-wrap items-center gap-2 pt-2">
+          {/* Nova Tarefa Button (moved to the row before/next to Todas and Minhas tarefas) */}
+          <button
+            id="btn-add-task-main"
+            onClick={onNewTask}
+            className="flex items-center gap-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-bold px-3.5 py-2 text-xs shadow-sm transition-all active:scale-95 whitespace-nowrap cursor-pointer mr-1"
+          >
+            <Plus className="h-4 w-4" strokeWidth={2.4} />
+            <span>Nova Tarefa</span>
+          </button>
+
           {/* Todas Pill */}
           <button
             id="filter-pill-todas"
@@ -1243,8 +1225,45 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
               <option value="este_mes">Este mês</option>
               <option value="atrasados">Atrasados</option>
               <option value="sem_data">Sem data</option>
+              <option value="personalizado">Personalizado (de x a x)</option>
             </select>
           </div>
+
+          {/* Custom Date Range (de x a x) */}
+          {selectedDateFilter === 'personalizado' && (
+            <div className="col-span-full flex flex-wrap items-center gap-3 p-3 rounded-xl bg-slate-50/80 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 animate-in fade-in duration-150">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Período personalizado:
+              </span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-500">De:</span>
+                <input
+                  type="date"
+                  value={customDateFrom}
+                  onChange={(e) => setTaskFilters({ customDateFrom: e.target.value })}
+                  className="clean-input h-9 px-2 text-xs font-medium text-slate-900 dark:text-white cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-500">Até:</span>
+                <input
+                  type="date"
+                  value={customDateTo}
+                  onChange={(e) => setTaskFilters({ customDateTo: e.target.value })}
+                  className="clean-input h-9 px-2 text-xs font-medium text-slate-900 dark:text-white cursor-pointer"
+                />
+              </div>
+              {(customDateFrom || customDateTo) && (
+                <button
+                  type="button"
+                  onClick={() => setTaskFilters({ customDateFrom: '', customDateTo: '' })}
+                  className="text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white underline cursor-pointer"
+                >
+                  Limpar datas
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Counter Info */}
@@ -1253,14 +1272,9 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             <span>
               Exibindo <strong className="text-slate-900 dark:text-white font-bold">{filteredTasks.length}</strong> de {tasks.length} tarefas
             </span>
-            <span className="text-slate-300 dark:text-slate-700 hidden sm:inline">•</span>
-            <span className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400">
-              <Calendar className="h-3 w-3 text-slate-400" />
-              <span>Ordem cronológica por Data da Publicação</span>
-            </span>
           </div>
 
-          {(selectedStatusKeys.length > 0 || onlyMyTasks || selectedClientId !== 'all' || selectedAssigneeId !== 'all' || selectedStatusDropdown !== 'all' || selectedDateFilter !== 'all' || searchQuery) && (
+          {(selectedStatusKeys.length > 0 || onlyMyTasks || selectedClientId !== 'all' || selectedAssigneeId !== 'all' || selectedStatusDropdown !== 'all' || selectedDateFilter !== 'all' || customDateFrom || customDateTo || searchQuery) && (
             <button
               onClick={resetTaskFilters}
               className="text-xs font-bold text-slate-700 dark:text-slate-300 hover:underline cursor-pointer"
@@ -2467,6 +2481,35 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
           >
             <X className="h-3.5 w-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Floating Save View for All Admin Pop-up */}
+      {isViewModified && currentUser?.role === 'admin' && viewMode === 'list' && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5 duration-200">
+          <div className="flex items-center gap-3 bg-slate-900/95 dark:bg-white/95 text-white dark:text-slate-900 px-4 py-3 rounded-2xl shadow-2xl backdrop-blur-md border border-slate-800 dark:border-slate-200">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-xs font-bold">Estrutura da tabela modificada</span>
+            </div>
+            <button
+              id="btn-floating-save-view"
+              type="button"
+              onClick={handleSaveViewForAll}
+              disabled={isSavingView}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-400 text-slate-950 transition-all cursor-pointer shadow-xs active:scale-95"
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span>{isSavingView ? 'Salvando...' : 'Salvar para todos'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleResetColumns}
+              className="text-xs text-slate-400 hover:text-white dark:text-slate-600 dark:hover:text-slate-950 underline cursor-pointer"
+            >
+              Descartar
+            </button>
+          </div>
         </div>
       )}
     </div>

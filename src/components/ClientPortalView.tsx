@@ -26,6 +26,8 @@ import {
   AlertCircle,
   Clock,
   Copy,
+  Lightbulb,
+  Link2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useAppStore, useCurrentUser } from '../store';
@@ -56,6 +58,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const currentUser = useCurrentUser();
   const clients = useAppStore((s) => s.clients);
   const tasks = useAppStore((s) => s.tasks);
+  const addTask = useAppStore((s) => s.addTask);
   const clientApprove = useAppStore((s) => s.clientApprove);
   const clientRequestChange = useAppStore((s) => s.clientRequestChange);
   const clientRequestMultipleChanges = useAppStore((s) => s.clientRequestMultipleChanges);
@@ -66,10 +69,10 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     : (initialClientId || clients[0]?.id || '');
 
   const [selectedClientId, setSelectedClientId] = useState<string>(effectiveClientId);
-  const [activePortalTab, setActivePortalTab] = useState<'planejamento' | 'perfil' | 'relatorios'>(() => {
+  const [activePortalTab, setActivePortalTab] = useState<'planejamento' | 'sugestoes' | 'perfil' | 'relatorios'>(() => {
     try {
       const saved = localStorage.getItem('beewave_portal_tab');
-      if (saved && ['planejamento', 'perfil', 'relatorios'].includes(saved)) {
+      if (saved && ['planejamento', 'sugestoes', 'perfil', 'relatorios'].includes(saved)) {
         return saved as any;
       }
     } catch {}
@@ -81,8 +84,26 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
       localStorage.setItem('beewave_portal_tab', activePortalTab);
     } catch {}
   }, [activePortalTab]);
-  const [viewMode, setViewMode] = useState<'calendario' | 'lista'>('calendario');
-  const [statusFilter, setStatusFilter] = useState<'todas' | 'pendentes' | 'alterar' | 'aprovadas'>('todas');
+
+  // Initial view is 'lista' as requested: "Deixar lista como visualização inicial"
+  const [viewMode, setViewMode] = useState<'calendario' | 'lista'>('lista');
+  const [statusFilter, setStatusFilter] = useState<
+    'todas' | 'em_producao' | 'em_aprovacao' | 'alterar' | 'aprovado' | 'postado'
+  >('todas');
+  const [dateFilter, setDateFilter] = useState<
+    'all' | 'hoje' | 'esta_semana' | 'este_mes' | 'personalizado'
+  >('all');
+  const [portalDateFrom, setPortalDateFrom] = useState('');
+  const [portalDateTo, setPortalDateTo] = useState('');
+
+  // Suggestion form state
+  const [suggestionIdea, setSuggestionIdea] = useState('');
+  const [suggestionLinks, setSuggestionLinks] = useState('');
+  const [suggestionDate, setSuggestionDate] = useState('');
+  const [suggestionChannel, setSuggestionChannel] = useState('Instagram');
+  const [suggestionFormat, setSuggestionFormat] = useState('Post Feed');
+  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState(false);
+  const [suggestionSubmittedSuccess, setSuggestionSubmittedSuccess] = useState(false);
 
   // Keep selected client synced with props or currentUser
   React.useEffect(() => {
@@ -116,19 +137,128 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const activeReport = reports[selectedReportIndex] || reports[0];
 
   // Derived task lists for approval workflows
-  // Note: Tasks in 'alterar' must strictly not appear in pendingApprovalTasks
+  const inProductionTasks = clientTasks.filter(
+    (t) =>
+      t.status === 'nao_iniciado' ||
+      t.status === 'em_andamento' ||
+      t.status === 'aguardar' ||
+      t.status === 'urgencia'
+  );
   const pendingApprovalTasks = clientTasks.filter((t) => t.status === 'em_aprovacao');
   const changeRequestedTasks = clientTasks.filter((t) => t.status === 'alterar');
-  const approvedTasks = clientTasks.filter((t) => t.status === 'aprovado' || t.status === 'postado');
+  const approvedTasks = clientTasks.filter((t) => t.status === 'aprovado');
+  const postedTasks = clientTasks.filter((t) => t.status === 'postado');
   const unassignedDateTasks = clientTasks.filter((t) => !t.postDate || t.postDate.trim() === '');
 
   // Filtered tasks for list/calendar views
   const filteredClientTasks = clientTasks.filter((t) => {
-    if (statusFilter === 'pendentes') return t.status === 'em_aprovacao';
-    if (statusFilter === 'alterar') return t.status === 'alterar';
-    if (statusFilter === 'aprovadas') return t.status === 'aprovado' || t.status === 'postado';
+    // 1. Status Filter
+    if (statusFilter === 'em_producao') {
+      const isProd =
+        t.status === 'nao_iniciado' ||
+        t.status === 'em_andamento' ||
+        t.status === 'aguardar' ||
+        t.status === 'urgencia';
+      if (!isProd) return false;
+    } else if (statusFilter === 'em_aprovacao') {
+      if (t.status !== 'em_aprovacao') return false;
+    } else if (statusFilter === 'alterar') {
+      if (t.status !== 'alterar') return false;
+    } else if (statusFilter === 'aprovado') {
+      if (t.status !== 'aprovado') return false;
+    } else if (statusFilter === 'postado') {
+      if (t.status !== 'postado') return false;
+    }
+
+    // 2. Date Filter
+    if (dateFilter !== 'all') {
+      if (!t.postDate) return false;
+      const cleanPostDate = t.postDate.split('T')[0];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (dateFilter === 'hoje') {
+        const todayStr = today.toISOString().split('T')[0];
+        if (cleanPostDate !== todayStr) return false;
+      } else if (dateFilter === 'esta_semana') {
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(today.getDate() - today.getDay());
+        const endOfWeek = new Date(startOfWeek);
+        endOfWeek.setDate(startOfWeek.getDate() + 6);
+        const taskDate = new Date(`${cleanPostDate}T00:00:00`);
+        if (taskDate < startOfWeek || taskDate > endOfWeek) return false;
+      } else if (dateFilter === 'este_mes') {
+        const taskDate = new Date(`${cleanPostDate}T00:00:00`);
+        if (taskDate.getMonth() !== today.getMonth() || taskDate.getFullYear() !== today.getFullYear()) return false;
+      } else if (dateFilter === 'personalizado') {
+        if (portalDateFrom && cleanPostDate < portalDateFrom) return false;
+        if (portalDateTo && cleanPostDate > portalDateTo) return false;
+      }
+    }
+
     return true;
   });
+
+  // Client Pauta Suggestion Handler
+  const handleSubmitSuggestion = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!suggestionIdea.trim() || !currentClient) return;
+
+    setIsSubmittingSuggestion(true);
+
+    try {
+      const descriptionLines = [
+        '[Sugestão de pauta do cliente enviada via Portal do Cliente]',
+        '',
+        '• Ideia / Conteúdo sugerido:',
+        suggestionIdea.trim(),
+      ];
+
+      if (suggestionLinks.trim()) {
+        descriptionLines.push('', '• Links e referências do cliente:');
+        descriptionLines.push(suggestionLinks.trim());
+      }
+
+      if (suggestionDate) {
+        descriptionLines.push('', `• Data pretendida para publicação: ${suggestionDate}`);
+      }
+
+      if (suggestionFormat) {
+        descriptionLines.push(`• Formato sugerido: ${suggestionFormat}`);
+      }
+
+      const fullBriefing = descriptionLines.join('\n');
+
+      addTask({
+        clientId: currentClient.id,
+        title: 'Sugestão de pauta do cliente',
+        briefingText: fullBriefing,
+        channel: (suggestionChannel.toLowerCase() as any) || 'instagram',
+        postDate: suggestionDate || '',
+        status: 'nao_iniciado',
+        clientRequest: true,
+      });
+
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.7 },
+      });
+
+      setSuggestionSubmittedSuccess(true);
+      setSuggestionIdea('');
+      setSuggestionLinks('');
+      setSuggestionDate('');
+
+      setTimeout(() => {
+        setSuggestionSubmittedSuccess(false);
+      }, 6000);
+    } catch (err) {
+      console.error('Erro ao enviar sugestão:', err);
+    } finally {
+      setIsSubmittingSuggestion(false);
+    }
+  };
 
   // Modal open / close handlers
   const handleOpenTask = (task: Task, tab: 'conteudo' | 'ajustes' = 'conteudo') => {
