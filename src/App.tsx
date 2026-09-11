@@ -188,6 +188,22 @@ export function App() {
     }
   };
 
+  /**
+   * Quantas pautas dependem da equipe agora: ajuste pedido pelo cliente,
+   * sugestão de pauta ainda não avaliada, ou data de publicação já vencida.
+   * O mesmo número que a Home destaca em "Precisa de você".
+   */
+  const teamQueueCount = React.useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return allTasks.filter((t) => {
+      if (t.status === 'alterar') return true;
+      if (t.clientRequest && t.status === 'nao_iniciado') return true;
+      const day = (t.postDate || t.date || '').split('T')[0];
+      const concluida = t.status === 'aprovado' || t.status === 'postado';
+      return !!day && day < today && !concluida;
+    }).length;
+  }, [allTasks]);
+
   // If user is not logged in, render minimal clean login
   if (!currentUser) {
     return (
@@ -305,22 +321,6 @@ export function App() {
       />
     );
   }
-
-  /**
-   * Quantas pautas dependem da equipe agora: ajuste pedido pelo cliente,
-   * sugestão de pauta ainda não avaliada, ou data de publicação já vencida.
-   * O mesmo número que a Home destaca em "Precisa de você".
-   */
-  const teamQueueCount = React.useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return allTasks.filter((t) => {
-      if (t.status === 'alterar') return true;
-      if (t.clientRequest && t.status === 'nao_iniciado') return true;
-      const day = (t.postDate || t.date || '').split('T')[0];
-      const concluida = t.status === 'aprovado' || t.status === 'postado';
-      return !!day && day < today && !concluida;
-    }).length;
-  }, [allTasks]);
 
   return (
     <div

@@ -1995,7 +1995,7 @@ export const useAppStore = create<BeeWaveState>()(
             state.dismissedTimerTaskId === id ? null : state.dismissedTimerTaskId,
           tasks: state.tasks.map((t) => {
             if (t.id === id) {
-              updated = { ...t, timerStartedAt: Date.now() };
+              updated = { ...t, timerStartedAt: Date.now(), updatedAt: new Date().toISOString() };
               return updated;
             }
             return t;
@@ -2014,6 +2014,7 @@ export const useAppStore = create<BeeWaveState>()(
               ...t,
               timeSpent: (t.timeSpent || 0) + delta,
               timerStartedAt: null,
+              updatedAt: new Date().toISOString(),
             };
             return updated;
           }),

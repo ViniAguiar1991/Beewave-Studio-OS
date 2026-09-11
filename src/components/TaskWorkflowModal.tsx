@@ -465,7 +465,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
         id="task-modal-card"
         onClick={(e) => e.stopPropagation()}
         data-surface="app"
-        className="relative w-full max-w-7xl bg-white dark:bg-[#0f1114] sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col my-auto max-h-[96vh] overflow-hidden"
+        className="relative w-full max-w-7xl bg-white dark:bg-[#0f1114] sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col my-auto h-fit max-h-[96vh] overflow-hidden"
       >
         {/* TOP BAR / HEADER */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-7 h-16 border-b border-slate-200 dark:border-slate-800 shrink-0">
@@ -566,7 +566,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
         </div>
 
         {/* MODAL BODY (Scrollable with generous breathing space) */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-7 pt-6 pb-7 space-y-6">
+        <div className="min-h-0 overflow-y-auto px-5 sm:px-7 pt-6 pb-7 space-y-6">
           {/* Título. Textarea e não input: título longo precisa quebrar linha em
               vez de rolar na horizontal, e a altura acompanha o texto. */}
           <div className="w-full">

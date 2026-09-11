@@ -290,7 +290,10 @@
   background: linear-gradient(100deg, #ffffff 0%, #ffffff 45%, #f4f5f7 100%);
   background-attachment: fixed;
   color: #0b0c0e;
-  min-height: 100vh;
+  /* Sem min-height aqui. O atributo marca "esta superfície usa a escala
+     tipográfica do app", e quem o carrega não é só a casca da página — o
+     card do modal de tarefa também carrega, e era esticado a 100vh mesmo
+     com quatro campos preenchidos. A casca já pede min-h-screen na classe. */
 }
 
 .dark [data-surface='app'] {

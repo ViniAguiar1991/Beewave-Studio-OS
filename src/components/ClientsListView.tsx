@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import { Plus, Search, X } from 'lucide-react';
 import { useAppStore } from '../store';
 import { Client } from '../types';
-import { resumoDaSemana } from '../lib/weekPlan';
 import { FolderCard } from './FolderCard';
 import { Button, EmptyState } from './ui';
 
@@ -34,8 +33,6 @@ export const ClientsListView: React.FC<ClientsListViewProps> = ({ onSelectClient
 
   const [busca, setBusca] = useState('');
   const [criando, setCriando] = useState(false);
-
-  const semana = useMemo(() => resumoDaSemana(clients, tasks), [clients, tasks]);
 
   const visiveis = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -105,21 +102,18 @@ export const ClientsListView: React.FC<ClientsListViewProps> = ({ onSelectClient
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-7 pt-2">
           {visiveis.map((client) => {
-            const resumo = semana.clientes.find((c) => c.clientId === client.id);
-            const doCliente = tasks.filter((t) => t.clientId === client.id);
-            const comCliente = doCliente.filter(
-              (t) => t.status === 'em_aprovacao' || t.status === 'alterar'
-            ).length;
-            const emProducao = doCliente.filter((t) =>
-              ['nao_iniciado', 'em_andamento', 'planejamento', 'aguardar', 'urgencia'].includes(
-                t.status
-              )
-            ).length;
+            // A única coisa que sobra de status na etiqueta é a cor da aba:
+            // azul quando há algo parado esperando resposta do cliente.
+            const comCliente = tasks.some(
+              (t) =>
+                t.clientId === client.id &&
+                (t.status === 'em_aprovacao' || t.status === 'alterar')
+            );
 
             return (
               <FolderCard
                 key={client.id}
-                tabColor={comCliente > 0 ? 'bg-sky-400' : 'bg-slate-300 dark:bg-slate-700'}
+                tabColor={comCliente ? 'bg-sky-400' : 'bg-slate-300 dark:bg-slate-700'}
                 eyebrow={client.niche || 'Sem segmento definido'}
                 title={client.company || client.name || 'Cliente'}
                 onClick={() => onSelectClient(client.id)}
@@ -133,28 +127,6 @@ export const ClientsListView: React.FC<ClientsListViewProps> = ({ onSelectClient
                   ) : (
                     <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800 t-meta font-semibold text-slate-600 dark:text-slate-300">
                       {iniciais(client.company || client.name || '?')}
-                    </span>
-                  )
-                }
-                stats={[
-                  { valor: emProducao, rotulo: 'em produção' },
-                  { valor: comCliente, rotulo: 'com o cliente', destaque: comCliente > 0 },
-                  { valor: doCliente.length, rotulo: 'pautas no total' },
-                ]}
-                footer={
-                  resumo?.temContrato ? (
-                    resumo.faltaPlanejar > 0 ? (
-                      <span className="t-meta text-amber-700 dark:text-amber-500">
-                        Falta planejar {resumo.faltaPlanejar} desta semana
-                      </span>
-                    ) : (
-                      <span className="t-meta text-emerald-700 dark:text-emerald-400">
-                        Semana planejada
-                      </span>
-                    )
-                  ) : (
-                    <span className="t-meta text-slate-400 dark:text-slate-500">
-                      Sem serviços recorrentes cadastrados
                     </span>
                   )
                 }

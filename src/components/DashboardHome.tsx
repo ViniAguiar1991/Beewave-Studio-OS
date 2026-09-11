@@ -118,12 +118,12 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* O degradê é do container, não da imagem: o PNG entra recortado
             e a base some no cinza em vez de terminar numa borda dura. */}
-        <section className="lg:col-span-4 relative rounded-2xl overflow-hidden bg-gradient-to-t from-slate-200/90 via-slate-100/60 to-transparent dark:from-slate-800/70 dark:via-slate-800/25 dark:to-transparent min-h-[320px] flex items-end">
+        <section className="lg:col-span-4 relative rounded-2xl overflow-hidden bg-gradient-to-t from-slate-200/90 via-slate-100/60 to-transparent dark:from-slate-800/70 dark:via-slate-800/25 dark:to-transparent min-h-[320px] flex items-stretch">
           {mascote ? (
             <img
               src={mascote}
               alt=""
-              className="w-full max-h-[300px] object-contain object-bottom select-none"
+              className="w-full h-full object-contain object-bottom select-none"
               draggable={false}
             />
           ) : (

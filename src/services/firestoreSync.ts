@@ -131,7 +131,20 @@ export function initFirestoreSync() {
             ...raw,
             files: mergedFiles,
           };
-          tasks.push(t);
+
+          // Quem tem o carimbo mais novo ganha.
+          //
+          // Antes a nuvem sobrescrevia a memória sem comparar nada. Quando
+          // uma escrita falhava — cota diária estourada, rede caída — o
+          // snapshot seguinte devolvia a versão velha e desfazia a alteração
+          // em silêncio. Era o cronômetro que voltava a correr depois de
+          // pausado, e era também qualquer outra edição perdida sem aviso.
+          const localAt = Date.parse(localMatch?.updatedAt || '');
+          const cloudAt = Date.parse(raw.updatedAt || '');
+          const localEhMaisNovo =
+            !!localMatch && !Number.isNaN(localAt) && (Number.isNaN(cloudAt) || localAt > cloudAt);
+
+          tasks.push(localEhMaisNovo ? { ...localMatch, files: mergedFiles } : t);
         }
       });
       if (tasks.length > 0) {
