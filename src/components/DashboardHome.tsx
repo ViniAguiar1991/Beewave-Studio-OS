@@ -1,38 +1,21 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  Users,
-  ListChecks,
-  CheckCircle2,
-  Clock,
   Plus,
   ArrowRight,
   Check,
   Trash2,
-  Calendar,
-  AlertCircle,
-  Sparkles,
-  ExternalLink,
-  LogOut,
-  FolderKanban,
-  Zap,
-  TrendingUp,
-  CalendarDays,
-  Play,
   RotateCw,
+  MessageSquareWarning,
+  Lightbulb,
+  Clock,
 } from 'lucide-react';
-import {
-  startOfWeek,
-  endOfWeek,
-  addWeeks,
-  parseISO,
-  isWithinInterval,
-  format,
-} from 'date-fns';
+import { startOfWeek, endOfWeek, parseISO, isWithinInterval, format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAppStore, useCurrentUser } from '../store';
-import { getStatusBadgeStyle, getStatusLabel } from '../utils/badgeStyles';
-import { formatFriendlyDate } from '../utils/dateFormatter';
-import { TaskStatusButton } from './TaskStatusButton';
+import { Task, Client, TaskStatus } from '../types';
+import { getColor, hexToColorKey } from '../lib/taskViews';
+import { formatFriendlyDate, isTaskDelayed } from '../utils/dateFormatter';
+import { Button, BlockHeader, EmptyState } from './ui';
 
 interface DashboardHomeProps {
   onSelectTask: (taskId: string) => void;
@@ -41,6 +24,22 @@ interface DashboardHomeProps {
   onSelectTab: (tab: string) => void;
 }
 
+const IN_PRODUCTION = ['nao_iniciado', 'em_andamento', 'planejamento', 'aguardar', 'urgencia'];
+
+const getDay = (t: Task) => (t.postDate || t.date || '').split('T')[0] || null;
+
+/**
+ * Início — o painel de operação da agência.
+ *
+ * A tela responde, nesta ordem: o que trava agora, o que sai esta semana e
+ * como está cada cliente. Antes ela abria com dois cards de "ritmo de produção"
+ * contendo caixas de métrica dentro de caixas, barra de progresso e um grid de
+ * cards de cliente com mais caixas dentro — muito container, pouca decisão.
+ *
+ * O bloco "Precisa de você" existia como necessidade e não como tela: pedidos
+ * de ajuste e sugestões de pauta enviadas pelo cliente chegavam na lista geral
+ * de tarefas sem nenhuma marca, misturados com pauta criada pela equipe.
+ */
 export const DashboardHome: React.FC<DashboardHomeProps> = ({
   onSelectTask,
   onNewTask,
@@ -49,80 +48,88 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
 }) => {
   const clients = useAppStore((s) => s.clients);
   const tasks = useAppStore((s) => s.tasks);
+  const statuses = useAppStore((s) => s.statuses);
   const notes = useAppStore((s) => s.notes);
   const addNote = useAppStore((s) => s.addNote);
   const toggleNote = useAppStore((s) => s.toggleNote);
   const deleteNote = useAppStore((s) => s.deleteNote);
-  const logout = useAppStore((s) => s.logout);
   const generateMonthlyTasksFromContract = useAppStore((s) => s.generateMonthlyTasksFromContract);
   const currentUser = useCurrentUser();
 
   const [newNoteText, setNewNoteText] = useState('');
-  const [generationNotice, setGenerationNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  // Dynamic Time-Based Greeting
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return 'Bom dia';
-    if (hour >= 12 && hour < 18) return 'Boa tarde';
+  const greeting = useMemo(() => {
+    const h = new Date().getHours();
+    if (h >= 5 && h < 12) return 'Bom dia';
+    if (h >= 12 && h < 18) return 'Boa tarde';
     return 'Boa noite';
-  };
-  const userName = currentUser?.name?.split(' ')[0] || 'Criativo';
+  }, []);
+  const firstName = currentUser?.name?.split(' ')[0] || 'Criativo';
 
-  // Real production metrics calculation
-  const now = new Date();
-  const thisWeekStart = startOfWeek(now, { weekStartsOn: 1 });
-  const thisWeekEnd = endOfWeek(now, { weekStartsOn: 1 });
-  const nextWeekStart = startOfWeek(addWeeks(now, 1), { weekStartsOn: 1 });
-  const nextWeekEnd = endOfWeek(addWeeks(now, 1), { weekStartsOn: 1 });
+  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
 
-  // Helpers to categorize tasks by production stage
-  const isToProduce = (status: string) =>
-    status === 'nao_iniciado' ||
-    status === 'em_andamento' ||
-    status === 'planejamento' ||
-    status === 'aguardar' ||
-    status === 'urgencia';
+  /* ------------------------------------------------------------------------
+   * A fila da equipe: o que está parado esperando alguém da Beewave.
+   * ---------------------------------------------------------------------- */
+  const queue = useMemo(() => {
+    const changeRequests = tasks.filter((t) => t.status === 'alterar');
+    const suggestions = tasks.filter(
+      (t) => t.clientRequest && t.status === 'nao_iniciado'
+    );
+    const late = tasks.filter(
+      (t) => isTaskDelayed(t) && t.status !== 'alterar' && !t.clientRequest
+    );
+    return { changeRequests, suggestions, late };
+  }, [tasks]);
 
-  const isInApproval = (status: string) =>
-    status === 'em_aprovacao' || status === 'alterar';
+  const queueTotal = queue.changeRequests.length + queue.suggestions.length + queue.late.length;
 
-  const isApproved = (status: string) =>
-    status === 'aprovado' || status === 'postado';
+  /* ------------------------------------------------------------------------
+   * A semana corrente.
+   * ---------------------------------------------------------------------- */
+  const week = useMemo(() => {
+    const now = new Date();
+    const start = startOfWeek(now, { weekStartsOn: 1 });
+    const end = endOfWeek(now, { weekStartsOn: 1 });
 
-  // Tasks in this week
-  const thisWeekTasks = tasks.filter((t) => {
-    if (!t.postDate) return false;
-    try {
-      const pDate = parseISO(t.postDate);
-      return isWithinInterval(pDate, { start: thisWeekStart, end: thisWeekEnd });
-    } catch {
-      return false;
+    const inWeek = tasks.filter((t) => {
+      const d = getDay(t);
+      if (!d) return false;
+      try {
+        return isWithinInterval(parseISO(d), { start, end });
+      } catch {
+        return false;
+      }
+    });
+
+    return {
+      start,
+      end,
+      total: inWeek.length,
+      toProduce: inWeek.filter((t) => IN_PRODUCTION.includes(t.status)).length,
+      awaitingClient: inWeek.filter((t) => t.status === 'em_aprovacao').length,
+      done: inWeek.filter((t) => t.status === 'aprovado' || t.status === 'postado').length,
+    };
+  }, [tasks]);
+
+  const totalAwaitingClient = tasks.filter((t) => t.status === 'em_aprovacao').length;
+
+  const headline = useMemo(() => {
+    const parts: string[] = [];
+    if (queueTotal > 0) {
+      parts.push(`${queueTotal} ${queueTotal === 1 ? 'pauta precisa' : 'pautas precisam'} da equipe`);
     }
-  });
-
-  const thisWeekToProduce = thisWeekTasks.filter((t) => isToProduce(t.status));
-  const thisWeekInApproval = thisWeekTasks.filter((t) => isInApproval(t.status));
-  const thisWeekApproved = thisWeekTasks.filter((t) => isApproved(t.status));
-
-  // Tasks in next week
-  const nextWeekTasks = tasks.filter((t) => {
-    if (!t.postDate) return false;
-    try {
-      const pDate = parseISO(t.postDate);
-      return isWithinInterval(pDate, { start: nextWeekStart, end: nextWeekEnd });
-    } catch {
-      return false;
+    if (totalAwaitingClient > 0) {
+      parts.push(`${totalAwaitingClient} na mão do cliente`);
     }
-  });
-
-  const nextWeekToProduce = nextWeekTasks.filter((t) => isToProduce(t.status));
-  const nextWeekInApproval = nextWeekTasks.filter((t) => isInApproval(t.status));
-  const nextWeekApproved = nextWeekTasks.filter((t) => isApproved(t.status));
-
-  // Overall counts
-  const totalInApproval = tasks.filter((t) => isInApproval(t.status)).length;
-  const totalInProduction = tasks.filter((t) => isToProduce(t.status)).length;
+    if (parts.length === 0) {
+      return week.total > 0
+        ? `Nada travado. ${week.total} ${week.total === 1 ? 'publicação' : 'publicações'} programadas para esta semana.`
+        : 'Nada travado e nenhuma publicação programada para esta semana.';
+    }
+    return `${parts.join(' · ')}.`;
+  }, [queueTotal, totalAwaitingClient, week.total]);
 
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,364 +138,347 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
     setNewNoteText('');
   };
 
-  const handleGenerateForClient = (clientId: string, clientName: string) => {
-    const count = generateMonthlyTasksFromContract(clientId);
-    setGenerationNotice(
+  const handleGenerate = (client: Client) => {
+    const count = generateMonthlyTasksFromContract(client.id);
+    setNotice(
       count > 0
-        ? `Criadas ${count} tarefas automáticas para ${clientName} no mês atual!`
-        : `Nenhum novo serviço recorrente pendente para ${clientName}.`
+        ? `${count} ${count === 1 ? 'pauta criada' : 'pautas criadas'} para ${client.company} a partir do contrato.`
+        : `Nenhum serviço recorrente pendente para ${client.company} neste mês.`
     );
-    setTimeout(() => setGenerationNotice(null), 4000);
+    window.setTimeout(() => setNotice(null), 5000);
   };
 
   return (
-    <div id="dashboard-home" className="mx-auto max-w-6xl space-y-10 pb-20 animate-fade-in">
-      {/* 1. Notion-Style Clean Header (Spacious, Unboxed, High Contrast) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-200/80 dark:border-slate-800">
-        <div className="space-y-1.5 max-w-2xl">
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span>Painel de Operações da Agência</span>
-          </div>
-          <h1 className="text-3xl sm:text-4xl font-display font-bold text-slate-900 dark:text-white tracking-tight">
-            {getGreeting()}, {userName}
+    <div className="mx-auto max-w-5xl space-y-12 pb-16">
+      {/* 1. Onde estou, como está, o que faço */}
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-5 border-b border-slate-200 dark:border-slate-800 pb-6">
+        <div className="min-w-0">
+          <h1 className="font-display text-[30px] sm:text-[34px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
+            {greeting}, {firstName}
           </h1>
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            Você tem <strong className="text-slate-900 dark:text-white font-semibold">{totalInApproval} publicações</strong> em aprovação e <strong className="text-slate-900 dark:text-white font-semibold">{totalInProduction} pautas</strong> em produção ativa.
-          </p>
+          <p className="t-body text-slate-600 dark:text-slate-400 mt-1.5">{headline}</p>
         </div>
+        <Button variant="primary" icon={Plus} onClick={onNewTask} className="shrink-0 self-start sm:self-auto">
+          Nova tarefa
+        </Button>
+      </header>
 
-        <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0">
-          <button
-            onClick={onNewTask}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-bold text-xs shadow-xs transition-all cursor-pointer active:scale-95"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Nova Tarefa</span>
-          </button>
-
-          <button
-            id="btn-home-hero-logout"
-            onClick={() => logout()}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/80 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-2xs"
-            title="Encerrar sessão"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Sair</span>
-          </button>
-        </div>
-      </div>
-
-      {generationNotice && (
-        <div className="p-3.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800/80 text-emerald-800 dark:text-emerald-300 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
-          <Sparkles className="h-4 w-4 text-emerald-600 shrink-0" />
-          <span>{generationNotice}</span>
-        </div>
+      {notice && (
+        <p role="status" className="t-body text-emerald-700 dark:text-emerald-400 -mt-6">
+          {notice}
+        </p>
       )}
 
-      {/* 2. RITMO DE PRODUÇÃO: Esta Semana vs Próxima Semana (Requested by user) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <CalendarDays className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-              Ritmo de Produção Semanal
-            </h2>
+      {/* 2. A fila da equipe. Único bloco que pede ação. */}
+      <section className="space-y-5">
+        <BlockHeader
+          title="Precisa de você"
+          count={queueTotal > 0 ? `${queueTotal} ${queueTotal === 1 ? 'pauta' : 'pautas'}` : undefined}
+          action={
+            queueTotal > 0 ? (
+              <Button variant="secondary" size="sm" onClick={() => onSelectTab('tarefas')}>
+                Abrir tarefas
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            ) : undefined
+          }
+        />
+
+        {queueTotal === 0 ? (
+          <EmptyState
+            title="Nada travado no momento"
+            hint="Pedidos de ajuste, sugestões enviadas pelos clientes e pautas atrasadas aparecem aqui assim que surgirem."
+          />
+        ) : (
+          <div className="space-y-8">
+            <QueueGroup
+              label="Ajustes pedidos pelo cliente"
+              hint="O cliente devolveu — refazer e reenviar."
+              tone="text-rose-700 dark:text-rose-400"
+              icon={MessageSquareWarning}
+              tasks={queue.changeRequests}
+              clientById={clientById}
+              statuses={statuses}
+              onSelectTask={onSelectTask}
+            />
+            <QueueGroup
+              label="Sugestões de pauta do cliente"
+              hint="Chegaram pelo portal e ainda não foram avaliadas."
+              tone="text-amber-700 dark:text-amber-500"
+              icon={Lightbulb}
+              tasks={queue.suggestions}
+              clientById={clientById}
+              statuses={statuses}
+              onSelectTask={onSelectTask}
+            />
+            <QueueGroup
+              label="Atrasadas"
+              hint="A data de publicação já passou."
+              tone="text-slate-700 dark:text-slate-300"
+              icon={Clock}
+              tasks={queue.late}
+              clientById={clientById}
+              statuses={statuses}
+              onSelectTask={onSelectTask}
+            />
           </div>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            Acompanhamento de entregas programadas
-          </span>
+        )}
+      </section>
+
+      {/* 3. A semana, em texto. Sem caixa dentro de caixa, sem barra decorativa. */}
+      <section className="space-y-5">
+        <BlockHeader
+          title="Esta semana"
+          count={`${format(week.start, "d 'de' MMM", { locale: ptBR })} a ${format(week.end, "d 'de' MMM", { locale: ptBR })}`}
+          action={
+            <button
+              onClick={() => onSelectTab('tarefas')}
+              className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
+            >
+              Abrir tarefas
+            </button>
+          }
+        />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-6">
+          <Stat value={week.total} label="Publicações na semana" />
+          <Stat value={week.toProduce} label="Ainda para produzir" />
+          <Stat value={week.awaitingClient} label="Na mão do cliente" />
+          <Stat value={week.done} label="Aprovadas" />
         </div>
+      </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Card: Esta Semana */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6 space-y-4 shadow-2xs">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                  Esta Semana
-                </span>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {format(thisWeekStart, 'dd/MM')} a {format(thisWeekEnd, 'dd/MM')}
-                </h3>
-              </div>
-              <span className="text-2xl font-display font-bold text-slate-900 dark:text-white">
-                {thisWeekTasks.length} <span className="text-xs font-normal text-slate-500">posts</span>
-              </span>
-            </div>
+      {/* 4. Situação por cliente. Uma linha por cliente, não um card. */}
+      <section className="space-y-5">
+        <BlockHeader
+          title="Clientes"
+          count={`${clients.length} ${clients.length === 1 ? 'conta ativa' : 'contas ativas'}`}
+          action={
+            <button
+              onClick={() => onSelectTab('clientes')}
+              className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
+            >
+              Ver todos
+            </button>
+          }
+        />
 
-            {/* Metrics Breakdown */}
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Faltam Produzir</p>
-                <p className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">
-                  {thisWeekToProduce.length}
-                </p>
-              </div>
+        {clients.length === 0 ? (
+          <EmptyState
+            title="Nenhum cliente cadastrado"
+            hint="Cadastre o primeiro cliente para começar a programar pautas e liberar o portal de aprovação."
+          />
+        ) : (
+          <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+            {clients.map((client) => {
+              const list = tasks.filter((t) => t.clientId === client.id);
+              const producing = list.filter((t) => IN_PRODUCTION.includes(t.status)).length;
+              const awaiting = list.filter((t) => t.status === 'em_aprovacao').length;
+              const adjusting = list.filter((t) => t.status === 'alterar').length;
 
-              <div className="p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/60">
-                <p className="text-[10px] font-bold text-amber-800 dark:text-amber-400 uppercase">Em Aprovação</p>
-                <p className="text-lg font-bold text-amber-900 dark:text-amber-300 mt-0.5">
-                  {thisWeekInApproval.length}
-                </p>
-              </div>
+              const today = new Date().toISOString().split('T')[0];
+              const next = list
+                .filter((t) => {
+                  const d = getDay(t);
+                  return !!d && d >= today && t.status !== 'postado';
+                })
+                .sort((a, b) => (getDay(a) || '').localeCompare(getDay(b) || ''))[0];
 
-              <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-900/60">
-                <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 uppercase">Aprovados</p>
-                <p className="text-lg font-bold text-emerald-900 dark:text-emerald-300 mt-0.5">
-                  {thisWeekApproved.length}
-                </p>
-              </div>
-            </div>
-
-            {/* Quick progress bar */}
-            <div>
-              <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                <span>Conclusão da semana</span>
-                <span className="font-bold text-slate-800 dark:text-slate-200">
-                  {thisWeekTasks.length > 0
-                    ? Math.round((thisWeekApproved.length / thisWeekTasks.length) * 100)
-                    : 0}%
-                </span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-emerald-500 rounded-full transition-all duration-300"
-                  style={{
-                    width: `${
-                      thisWeekTasks.length > 0
-                        ? (thisWeekApproved.length / thisWeekTasks.length) * 100
-                        : 0
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Card: Próxima Semana */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6 space-y-4 shadow-2xs">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
-                  Próxima Semana
-                </span>
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {format(nextWeekStart, 'dd/MM')} a {format(nextWeekEnd, 'dd/MM')}
-                </h3>
-              </div>
-              <span className="text-2xl font-display font-bold text-slate-900 dark:text-white">
-                {nextWeekTasks.length} <span className="text-xs font-normal text-slate-500">posts</span>
-              </span>
-            </div>
-
-            {/* Metrics Breakdown */}
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800">
-                <p className="text-[10px] font-bold text-slate-500 uppercase">Faltam Produzir</p>
-                <p className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">
-                  {nextWeekToProduce.length}
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/60">
-                <p className="text-[10px] font-bold text-blue-800 dark:text-blue-400 uppercase">Em Aprovação</p>
-                <p className="text-lg font-bold text-blue-900 dark:text-blue-300 mt-0.5">
-                  {nextWeekInApproval.length}
-                </p>
-              </div>
-
-              <div className="p-3 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/30 border border-emerald-200/60 dark:border-emerald-900/60">
-                <p className="text-[10px] font-bold text-emerald-800 dark:text-emerald-400 uppercase">Adiantados</p>
-                <p className="text-lg font-bold text-emerald-900 dark:text-emerald-300 mt-0.5">
-                  {nextWeekApproved.length}
-                </p>
-              </div>
-            </div>
-
-            {/* Antecipation info */}
-            <div className="p-2.5 rounded-xl bg-slate-50/80 dark:bg-slate-800/40 text-[11px] text-slate-600 dark:text-slate-300 flex items-center justify-between">
-              <span>Produção antecipada:</span>
-              <span className="font-bold text-slate-900 dark:text-white">
-                {nextWeekTasks.length > 0 ? `${nextWeekApproved.length} de ${nextWeekTasks.length} já prontos` : 'Nenhuma pauta agendada'}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. FLUXO POR CLIENTE & CONTRATO (Recorrência + Automação) */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-slate-500" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-              Contratos & Entregas Recorrentes
-            </h2>
-          </div>
-          <button
-            onClick={() => onSelectTab('campanhas')}
-            className="text-xs font-bold text-amber-600 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            <FolderKanban className="h-3.5 w-3.5" />
-            <span>Ver Pastas de Campanhas</span>
-          </button>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {clients.map((client) => {
-            const clientTasks = tasks.filter((t) => t.clientId === client.id);
-            const pendingClientApproval = clientTasks.filter((t) => t.status === 'em_aprovacao').length;
-            const inProdClient = clientTasks.filter((t) => isToProduce(t.status)).length;
-            const recurringServices = client.contractServices || [];
-
-            return (
-              <div
-                key={client.id}
-                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-all flex flex-col justify-between"
-              >
-                <div className="space-y-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <span className="text-2xl p-1.5 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700">
-                        {client.emoji || '🏢'}
-                      </span>
-                      <div>
-                        <h3
-                          onClick={() => onSelectClient(client.id)}
-                          className="font-bold text-sm text-slate-900 dark:text-white hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer"
-                        >
-                          {client.company}
-                        </h3>
-                        <p className="text-[11px] text-slate-500 truncate max-w-[170px]">
-                          {client.niche || 'Cliente Recorrente'}
-                        </p>
-                      </div>
-                    </div>
-
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                      {client.postsPerWeek || 3} posts/sem
-                    </span>
-                  </div>
-
-                  {/* Stats Mini Row */}
-                  <div className="grid grid-cols-2 gap-2 text-xs pt-1">
-                    <div className="p-2 rounded-lg bg-slate-50 dark:bg-slate-800/50">
-                      <span className="text-[10px] text-slate-400 block">Em Produção</span>
-                      <span className="font-bold text-slate-800 dark:text-slate-200">
-                        {inProdClient} pautas
-                      </span>
-                    </div>
-                    <div className="p-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20">
-                      <span className="text-[10px] text-amber-600 dark:text-amber-400 block">Para Aprovar</span>
-                      <span className="font-bold text-amber-800 dark:text-amber-300">
-                        {pendingClientApproval} posts
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recurrence Trigger Button */}
-                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+              return (
+                <li key={client.id} className="py-4 flex items-center gap-4 flex-wrap sm:flex-nowrap">
                   <button
                     onClick={() => onSelectClient(client.id)}
-                    className="text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                    className="flex items-center gap-3 min-w-0 flex-1 text-left group cursor-pointer"
                   >
-                    Ver perfil
-                  </button>
-
-                  <button
-                    onClick={() => handleGenerateForClient(client.id, client.company)}
-                    title="Gera automaticamente as pautas do mês baseadas nos serviços recorrentes cadastrados"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs font-bold transition-colors cursor-pointer"
-                  >
-                    <RotateCw className="h-3 w-3" />
-                    <span>Gerar Pautas do Mês</span>
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 4. NOTAS RÁPIDAS & LEMBRETES (Clean Notion list, no heavy box) */}
-      <div className="space-y-4 pt-2">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-              Bloco de Notas Rápidas & Foco
-            </h2>
-          </div>
-          <span className="text-xs text-slate-500">
-            {notes.filter((n) => !n.done).length} anotações pendentes
-          </span>
-        </div>
-
-        <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 space-y-4 shadow-2xs">
-          <form onSubmit={handleAddNote} className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Adicionar nota rápida ou lembrete de produção..."
-              value={newNoteText}
-              onChange={(e) => setNewNoteText(e.target.value)}
-              className="clean-input h-10 flex-1 px-3 text-xs bg-slate-50 dark:bg-slate-800/60"
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white text-xs font-bold transition-all cursor-pointer shrink-0"
-            >
-              Adicionar
-            </button>
-          </form>
-
-          <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
-            {notes.length === 0 ? (
-              <p className="text-xs text-slate-400 py-3 text-center">
-                Nenhuma nota salva. Use este espaço para lembretes diários.
-              </p>
-            ) : (
-              notes.map((note) => (
-                <div
-                  key={note.id}
-                  className="flex items-center justify-between py-2.5 gap-3 text-xs"
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <button
-                      onClick={() => toggleNote(note.id)}
-                      className={`h-4 w-4 rounded-md border flex items-center justify-center transition-colors cursor-pointer ${
-                        note.done
-                          ? 'bg-emerald-500 border-emerald-500 text-white'
-                          : 'border-slate-300 dark:border-slate-700 hover:border-slate-400'
-                      }`}
-                    >
-                      {note.done && <Check className="h-3 w-3" />}
-                    </button>
-                    <span
-                      className={`truncate ${
-                        note.done
-                          ? 'line-through text-slate-400 dark:text-slate-500'
-                          : 'text-slate-800 dark:text-slate-200'
-                      }`}
-                    >
-                      {note.text}
+                    <span className="min-w-0">
+                      <span className="block t-lead font-medium text-slate-900 dark:text-white truncate group-hover:underline underline-offset-4 decoration-slate-300">
+                        {client.company}
+                      </span>
+                      <span className="block t-meta text-slate-500 dark:text-slate-400 truncate">
+                        {next
+                          ? `Próxima publicação ${formatFriendlyDate(getDay(next)).toLowerCase()}`
+                          : 'Sem publicação agendada'}
+                      </span>
                     </span>
+                  </button>
+
+                  <div className="flex items-center gap-5 shrink-0 t-meta tabular-nums">
+                    <ClientStat n={producing} label="produzindo" />
+                    <ClientStat n={awaiting} label="c/ cliente" highlight={awaiting > 0} />
+                    <ClientStat n={adjusting} label="ajuste" alert={adjusting > 0} />
                   </div>
 
                   <button
-                    onClick={() => deleteNote(note.id)}
-                    className="text-slate-400 hover:text-rose-500 transition-colors cursor-pointer p-1"
-                    title="Excluir nota"
+                    onClick={() => handleGenerate(client)}
+                    title="Cria as pautas do mês a partir dos serviços recorrentes do contrato"
+                    className="shrink-0 inline-flex items-center gap-1.5 t-ui text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <RotateCw className="h-3.5 w-3.5" />
+                    <span className="hidden lg:inline">Gerar pautas</span>
                   </button>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
+
+      {/* 5. Notas rápidas */}
+      <section className="space-y-5">
+        <BlockHeader
+          title="Notas"
+          count={
+            notes.filter((n) => !n.done).length > 0
+              ? `${notes.filter((n) => !n.done).length} em aberto`
+              : undefined
+          }
+        />
+
+        <form onSubmit={handleAddNote} className="flex gap-2.5">
+          <input
+            type="text"
+            value={newNoteText}
+            onChange={(e) => setNewNoteText(e.target.value)}
+            placeholder="Anotar um lembrete…"
+            className="flex-1 h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors"
+          />
+          <Button variant="secondary" type="submit" disabled={!newNoteText.trim()}>
+            Adicionar
+          </Button>
+        </form>
+
+        {notes.length > 0 && (
+          <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-t border-slate-200 dark:border-slate-800">
+            {notes.map((note) => (
+              <li key={note.id} className="flex items-center gap-3 py-2.5">
+                <button
+                  onClick={() => toggleNote(note.id)}
+                  aria-label={note.done ? 'Marcar como pendente' : 'Marcar como feita'}
+                  className={`grid h-[18px] w-[18px] shrink-0 place-items-center rounded border transition-colors cursor-pointer ${
+                    note.done
+                      ? 'bg-slate-950 dark:bg-white border-slate-950 dark:border-white text-white dark:text-slate-950'
+                      : 'border-slate-300 dark:border-slate-600 hover:border-slate-500'
+                  }`}
+                >
+                  {note.done && <Check className="h-3 w-3" strokeWidth={3} />}
+                </button>
+                <span
+                  className={`min-w-0 flex-1 t-body ${
+                    note.done
+                      ? 'line-through text-slate-400 dark:text-slate-600'
+                      : 'text-slate-800 dark:text-slate-200'
+                  }`}
+                >
+                  {note.text}
+                </span>
+                <button
+                  onClick={() => deleteNote(note.id)}
+                  aria-label="Excluir nota"
+                  className="shrink-0 text-slate-300 hover:text-rose-600 dark:text-slate-600 dark:hover:text-rose-400 transition-colors cursor-pointer p-1"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+};
+
+/* ========================================================================== */
+
+const Stat: React.FC<{ value: number; label: string }> = ({ value, label }) => (
+  <div>
+    <p className="font-display text-[28px] font-semibold tracking-tight text-slate-950 dark:text-white tabular-nums leading-none">
+      {value}
+    </p>
+    <p className="t-meta text-slate-500 dark:text-slate-400 mt-1.5">{label}</p>
+  </div>
+);
+
+const ClientStat: React.FC<{
+  n: number;
+  label: string;
+  highlight?: boolean;
+  alert?: boolean;
+}> = ({ n, label, highlight, alert }) => (
+  <span className="hidden sm:flex items-baseline gap-1.5">
+    <span
+      className={`font-semibold ${
+        alert
+          ? 'text-rose-700 dark:text-rose-400'
+          : highlight
+            ? 'text-amber-700 dark:text-amber-500'
+            : 'text-slate-900 dark:text-white'
+      }`}
+    >
+      {n}
+    </span>
+    <span className="text-slate-400 dark:text-slate-500">{label}</span>
+  </span>
+);
+
+/**
+ * Um grupo da fila. Some inteiro quando está vazio — um bloco com "0 itens"
+ * ocuparia espaço sem informar nada.
+ */
+const QueueGroup: React.FC<{
+  label: string;
+  hint: string;
+  tone: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tasks: Task[];
+  clientById: Map<string, Client>;
+  statuses: TaskStatus[];
+  onSelectTask: (id: string) => void;
+}> = ({ label, hint, tone, icon: Icon, tasks, clientById, statuses, onSelectTask }) => {
+  if (tasks.length === 0) return null;
+
+  return (
+    <div>
+      <div className="flex items-baseline gap-2.5 flex-wrap">
+        <span className={`inline-flex items-center gap-2 t-label ${tone}`}>
+          <Icon className="h-3.5 w-3.5" />
+          {label}
+        </span>
+        <span className="t-meta text-slate-400 dark:text-slate-500">
+          {tasks.length} · {hint}
+        </span>
       </div>
+
+      <ul className="mt-3 divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+        {tasks.map((task) => {
+          const client = clientById.get(task.clientId);
+          // Mesma cor que a Central de Tarefas usa: a do cadastro de status.
+          const status = statuses.find((s) => s.key === task.status);
+          const badge = getColor(hexToColorKey(status?.color));
+          const day = getDay(task);
+          return (
+            <li key={task.id}>
+              <button
+                onClick={() => onSelectTask(task.id)}
+                className="w-full flex items-center gap-4 py-3.5 text-left group cursor-pointer"
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block t-lead font-medium text-slate-900 dark:text-white truncate group-hover:underline underline-offset-4 decoration-slate-300">
+                    {task.selectedHeadline || task.headline || task.title}
+                  </span>
+                  <span className="block t-meta text-slate-500 dark:text-slate-400 truncate">
+                    {client?.company || 'Sem cliente'}
+                    {day && ` · ${formatFriendlyDate(day)}`}
+                  </span>
+                </span>
+                <span className={`shrink-0 hidden sm:inline-flex items-center gap-1.5 t-meta ${badge.text}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${badge.solid}`} />
+                  {status?.label || task.status}
+                </span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" />
+              </button>
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 };

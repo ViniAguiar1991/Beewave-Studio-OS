@@ -35,7 +35,10 @@ import {
   ClientStrategyDocument,
   Campaign,
   ContractService,
+  TaskView,
+  CustomProperty,
 } from './types';
+import { buildDefaultViews } from './lib/taskViews';
 import { EMELY_STRATEGY_DOCUMENT } from './data/emelyStrategy';
 
 export const DEFAULT_ADMIN_PROMPTS: AdminSystemPrompts = {
@@ -1235,6 +1238,20 @@ interface BeeWaveState {
   tableViewConfig: TableViewConfig | null;
   setTableViewConfig: (config: TableViewConfig | null) => void;
 
+  // Central de Tarefas configurável: visões e colunas criadas pelo usuário
+  taskViews: TaskView[];
+  activeViewId: string;
+  customProperties: CustomProperty[];
+  setActiveView: (viewId: string) => void;
+  addTaskView: (view: TaskView) => void;
+  updateTaskView: (viewId: string, data: Partial<TaskView>) => void;
+  deleteTaskView: (viewId: string) => void;
+  duplicateTaskView: (viewId: string) => void;
+  addCustomProperty: (prop: CustomProperty) => void;
+  updateCustomProperty: (id: string, data: Partial<CustomProperty>) => void;
+  deleteCustomProperty: (id: string) => void;
+  setTaskCustomField: (taskId: string, propertyId: string, value: any) => void;
+
   // Cloud Services
   cloudSync: CloudSyncInfo;
   syncWithCloud: () => Promise<void>;
@@ -1257,6 +1274,99 @@ export const useAppStore = create<BeeWaveState>()(
 
       tableViewConfig: null,
       setTableViewConfig: (config) => set({ tableViewConfig: config }),
+
+      /* ------------------------------------------------------------------
+       * Central de Tarefas configurável.
+       *
+       * Visões, filtros, regras de cor e colunas viram dados do usuário.
+       * Tudo aqui é persistido junto com o resto da store.
+       * ---------------------------------------------------------------- */
+      taskViews: buildDefaultViews(),
+      activeViewId: '',
+      customProperties: [],
+
+      setActiveView: (activeViewId) => set({ activeViewId }),
+
+      addTaskView: (view) =>
+        set((state) => ({ taskViews: [...state.taskViews, view], activeViewId: view.id })),
+
+      updateTaskView: (viewId, data) =>
+        set((state) => ({
+          taskViews: state.taskViews.map((v) => (v.id === viewId ? { ...v, ...data } : v)),
+        })),
+
+      deleteTaskView: (viewId) =>
+        set((state) => {
+          // Sempre sobra pelo menos uma visão: sem visão não há tabela.
+          const restantes = state.taskViews.filter((v) => v.id !== viewId && !v.isSystem ? true : v.id !== viewId);
+          const finais = restantes.length > 0 ? restantes : buildDefaultViews();
+          return {
+            taskViews: finais,
+            activeViewId: state.activeViewId === viewId ? finais[0].id : state.activeViewId,
+          };
+        }),
+
+      duplicateTaskView: (viewId) =>
+        set((state) => {
+          const origem = state.taskViews.find((v) => v.id === viewId);
+          if (!origem) return {};
+          const copia: TaskView = {
+            ...JSON.parse(JSON.stringify(origem)),
+            id: `view_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`,
+            name: `${origem.name} (cópia)`,
+            isSystem: false,
+            createdAt: new Date().toISOString(),
+          };
+          return { taskViews: [...state.taskViews, copia], activeViewId: copia.id };
+        }),
+
+      addCustomProperty: (prop) =>
+        set((state) => ({ customProperties: [...state.customProperties, prop] })),
+
+      updateCustomProperty: (id, data) =>
+        set((state) => ({
+          customProperties: state.customProperties.map((p) =>
+            p.id === id ? { ...p, ...data } : p
+          ),
+        })),
+
+      deleteCustomProperty: (id) =>
+        set((state) => ({
+          customProperties: state.customProperties.filter((p) => p.id !== id),
+          // A coluna some de todas as visões, senão ficam referências órfãs.
+          taskViews: state.taskViews.map((v) => ({
+            ...v,
+            visibleColumns: v.visibleColumns.filter((c) => c !== `custom:${id}`),
+            columnOrder: v.columnOrder.filter((c) => c !== `custom:${id}`),
+            filter: {
+              ...v.filter,
+              conditions: v.filter.conditions.filter((c) => c.field !== `custom:${id}`),
+            },
+            colorRules: v.colorRules.map((r) => ({
+              ...r,
+              filter: {
+                ...r.filter,
+                conditions: r.filter.conditions.filter((c) => c.field !== `custom:${id}`),
+              },
+            })),
+          })),
+        })),
+
+      setTaskCustomField: (taskId, propertyId, value) => {
+        let updated: Task | undefined;
+        set((state) => ({
+          tasks: state.tasks.map((t) => {
+            if (t.id !== taskId) return t;
+            updated = {
+              ...t,
+              customFields: { ...(t.customFields || {}), [propertyId]: value },
+              updatedAt: new Date().toISOString(),
+            };
+            return updated;
+          }),
+        }));
+        if (updated) syncTaskToCloud(updated);
+      },
 
       // Appearance defaults (clean light mode with linear gradient by default)
       darkMode: false,
@@ -1757,7 +1867,8 @@ export const useAppStore = create<BeeWaveState>()(
                 clientRequest: status === 'alterar' ? t.clientRequest : false,
                 updatedAt: new Date().toISOString(),
                 activity: [
-                  ...t.activity,
+                  ...(t.activity || []),
+
                   {
                     ts: new Date().toISOString(),
                     type: 'status_change',
@@ -1793,7 +1904,8 @@ export const useAppStore = create<BeeWaveState>()(
                 status: nextStatus,
                 updatedAt: new Date().toISOString(),
                 activity: [
-                  ...t.activity,
+                  ...(t.activity || []),
+
                   {
                     ts: new Date().toISOString(),
                     type: 'status_change',
@@ -1879,7 +1991,8 @@ export const useAppStore = create<BeeWaveState>()(
                 clientRequest: false,
                 updatedAt: new Date().toISOString(),
                 activity: [
-                  ...t.activity,
+                  ...(t.activity || []),
+
                   {
                     ts: new Date().toISOString(),
                     type: 'client_approve',
@@ -1907,7 +2020,8 @@ export const useAppStore = create<BeeWaveState>()(
                 clientRequest: true,
                 updatedAt: new Date().toISOString(),
                 activity: [
-                  ...t.activity,
+                  ...(t.activity || []),
+
                   {
                     ts: new Date().toISOString(),
                     type: 'client_change',
@@ -1964,7 +2078,8 @@ export const useAppStore = create<BeeWaveState>()(
                 status: type === 'client_change' ? 'alterar' : t.status,
                 updatedAt: new Date().toISOString(),
                 activity: [
-                  ...t.activity,
+                  ...(t.activity || []),
+
                   {
                     ts: new Date().toISOString(),
                     type,
@@ -2771,9 +2886,16 @@ export const useAppStore = create<BeeWaveState>()(
             }
           }
 
-          // Ensure Emely approval tasks exist for demo/testing
+          // Ensure Emely approval tasks exist for demo/testing.
+          //
+          // A checagem é por ID, não por status. Quando era por status
+          // ('nenhuma pauta da Emely em aprovação'), aprovar a pauta e
+          // recarregar a página reinseria a MESMA tarefa com o mesmo id fixo —
+          // duplicando a pauta no portal, quebrando as keys do React e, com a
+          // sync ligada, empurrando a duplicata para o Firestore.
           if (state.tasks) {
-            const hasEmelyTask = state.tasks.some((t) => t.clientId === 'c_emely' && t.status === 'em_aprovacao');
+            const existingIds = new Set(state.tasks.map((t) => t.id));
+            const hasEmelyTask = existingIds.has('task-emely-aprov-1');
             if (!hasEmelyTask) {
               const sampleApprovalTasks: Task[] = [
                 {
@@ -2869,8 +2991,35 @@ export const useAppStore = create<BeeWaveState>()(
                   updatedAt: new Date().toISOString(),
                 }
               ];
-              state.tasks = [...sampleApprovalTasks, ...state.tasks];
+              state.tasks = [
+                ...sampleApprovalTasks.filter((t) => !existingIds.has(t.id)),
+                ...state.tasks,
+              ];
             }
+          }
+
+          // Central de Tarefas: garante ao menos uma visão e uma visão ativa
+          // válida. Sem isso a tabela não teria o que renderizar depois de uma
+          // atualização vinda de versão anterior do app.
+          if (!state.taskViews || state.taskViews.length === 0) {
+            state.taskViews = buildDefaultViews();
+          }
+          if (!state.customProperties) {
+            state.customProperties = [];
+          }
+          if (!state.activeViewId || !state.taskViews.some((v) => v.id === state.activeViewId)) {
+            state.activeViewId = state.taskViews[0].id;
+          }
+
+          // Rede de segurança: remove duplicatas de id que versões anteriores
+          // deste hook possam ter deixado no armazenamento local.
+          if (state.tasks) {
+            const seen = new Set<string>();
+            state.tasks = state.tasks.filter((t) => {
+              if (seen.has(t.id)) return false;
+              seen.add(t.id);
+              return true;
+            });
           }
           // Ensure no task timer is left running indefinitely across page reloads/sessions
           state.dockedTimerTaskId = null;

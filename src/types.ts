@@ -258,6 +258,8 @@ export interface Task {
   clientFeedback?: string;
   notes?: string;
   editingBy?: TaskLiveEditing | null;
+  /** Valores das colunas criadas pelo usuário, indexados por CustomProperty.id. */
+  customFields?: Record<string, string | number | boolean | string[] | null>;
   createdAt: string;
   updatedAt: string;
 }
@@ -452,3 +454,100 @@ export interface ClientStrategyDocument {
   [key: string]: any;
 }
 
+
+/* ============================================================================
+ * CENTRAL DE TAREFAS CONFIGURÁVEL
+ *
+ * Filtros, cores e colunas deixam de ser código e viram dados que o usuário
+ * cria pela interface. Antes, "atrasada fica amarela" estava escrito num
+ * switch em badgeStyles.ts: qualquer regra nova exigia mexer no código.
+ * ========================================================================== */
+
+/** Tipos de coluna que o usuário pode criar. */
+export type PropertyType = 'text' | 'select' | 'multiSelect' | 'number' | 'date' | 'checkbox' | 'url';
+
+export interface PropertyOption {
+  id: string;
+  label: string;
+  /** Chave da paleta (ver TASK_COLORS), não hex — mantém a paleta coerente. */
+  color: string;
+}
+
+/** Coluna criada pelo usuário. Vale para todas as tarefas da agência. */
+export interface CustomProperty {
+  id: string;
+  name: string;
+  type: PropertyType;
+  /** Só para select e multiSelect. */
+  options?: PropertyOption[];
+  createdAt: string;
+}
+
+export type FilterOperator =
+  | 'is'
+  | 'isNot'
+  | 'isAnyOf'
+  | 'isNoneOf'
+  | 'contains'
+  | 'notContains'
+  | 'isEmpty'
+  | 'isNotEmpty'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'before'
+  | 'after'
+  | 'isToday'
+  | 'isOverdue'
+  | 'inNextDays'
+  | 'inLastDays'
+  | 'isTrue'
+  | 'isFalse';
+
+export interface FilterCondition {
+  id: string;
+  /** Id do campo: embutido ('status', 'postDate'…) ou `custom:<propertyId>`. */
+  field: string;
+  operator: FilterOperator;
+  value?: string | number | string[];
+}
+
+export interface FilterGroup {
+  /** 'all' = E entre as condições; 'any' = OU. */
+  match: 'all' | 'any';
+  conditions: FilterCondition[];
+}
+
+/** Regra de cor. A primeira que casar vence — a ordem da lista é a prioridade. */
+export interface ColorRule {
+  id: string;
+  name: string;
+  filter: FilterGroup;
+  /** Chave da paleta TASK_COLORS. */
+  color: string;
+  enabled: boolean;
+}
+
+export interface TaskSort {
+  field: string;
+  direction: 'asc' | 'desc';
+}
+
+/** Uma visão salva da Central de Tarefas. */
+export interface TaskView {
+  id: string;
+  name: string;
+  mode: 'list' | 'kanban' | 'calendar';
+  filter: FilterGroup;
+  sort: TaskSort | null;
+  colorRules: ColorRule[];
+  visibleColumns: string[];
+  columnOrder: string[];
+  columnWidths: Record<string, number>;
+  /** Campo usado para agrupar as colunas do Kanban. */
+  groupBy?: string;
+  /** Visões de sistema não podem ser apagadas. */
+  isSystem?: boolean;
+  createdAt: string;
+}

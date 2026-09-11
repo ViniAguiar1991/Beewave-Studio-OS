@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Configuração local do preview (Claude Code / dev server)
+.claude/

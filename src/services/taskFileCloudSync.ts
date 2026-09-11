@@ -7,6 +7,7 @@ import {
 } from '../firebase';
 import { TaskFile } from '../types';
 import { saveFileToLocalDb, getFileFromLocalDb, deleteFileFromLocalDb } from '../utils/fileStorageDb';
+import { isCloudSyncDisabled } from './firestoreSync';
 
 const CHUNK_SIZE = 550000; // ~550KB per chunk, well below Firestore's 1MB limit
 
@@ -20,6 +21,7 @@ const COLLECTIONS = {
  * Also persists it to local IndexedDB for instant zero-latency access.
  */
 export async function uploadTaskFileToCloud(taskId: string, file: TaskFile): Promise<void> {
+  if (isCloudSyncDisabled()) return;
   if (!file || !file.id) return;
 
   // If file has dataUrl, store it
@@ -157,6 +159,7 @@ export async function loadTaskFileDataUrl(file: TaskFile): Promise<string | null
  * Deletes a task file and all its chunks from Firestore and local cache
  */
 export async function deleteTaskFileFromCloud(fileId: string, totalChunksEstimated = 20): Promise<void> {
+  if (isCloudSyncDisabled()) return;
   if (!fileId) return;
 
   await deleteFileFromLocalDb(fileId);

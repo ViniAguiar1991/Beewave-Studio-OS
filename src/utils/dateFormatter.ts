@@ -177,6 +177,46 @@ export function formatFriendlyDate(dateStr?: string | null, includeDateSuffix = 
 }
 
 /**
+ * Parses the two date shapes used across the app (YYYY-MM-DD and full ISO)
+ * into a local Date anchored at midday, so timezone drift never shifts the day.
+ */
+function parseAppDate(dateStr?: string | null): Date | null {
+  if (!dateStr || !dateStr.trim()) return null;
+  try {
+    let d: Date;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+      const [y, m, day] = dateStr.split('-').map(Number);
+      d = new Date(y, m - 1, day, 12, 0, 0);
+    } else {
+      d = parseISO(dateStr);
+    }
+    return isValid(d) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Editorial long date, for headers and detail views.
+ * Example: "segunda-feira, 14 de setembro".
+ */
+export function formatLongDate(dateStr?: string | null): string {
+  const d = parseAppDate(dateStr);
+  if (!d) return 'Sem data definida';
+  return format(d, "EEEE, d 'de' MMMM", { locale: ptBR });
+}
+
+/**
+ * Timestamp for activity and history entries.
+ * Example: "14/09 às 16h20".
+ */
+export function formatTimestamp(iso?: string | null): string {
+  const d = parseAppDate(iso);
+  if (!d) return '';
+  return format(d, "dd/MM 'às' HH'h'mm", { locale: ptBR });
+}
+
+/**
  * Returns formatted date with both friendly label and dd/MM/yy
  * Example: "Hoje (19/08/26)" or "Próxima segunda-feira (24/08/26)" or "13/08/26"
  */

@@ -251,6 +251,143 @@
   background: rgba(27, 36, 50, 0.95);
 }
 
+/* ============================================================================
+   PORTAL DO CLIENTE — camada editorial
+   Superfície própria, isolada do app da agência. O portal é modo Operate puro:
+   o cliente entra para decidir, então o fundo é papel branco liso, sem mesh e
+   sem ruído, para que arte e texto fiquem com o contraste máximo.
+   ========================================================================== */
+
+[data-surface='portal'] {
+  --portal-page: #ffffff;
+  --portal-raised: #fafafa;
+  --portal-hairline: #e5e7eb;
+
+  background: var(--portal-page);
+  color: #0b0c0e;
+}
+
+.dark [data-surface='portal'] {
+  --portal-page: #0a0b0d;
+  --portal-raised: #121417;
+  --portal-hairline: #262a30;
+
+  background: var(--portal-page);
+  color: #f5f6f7;
+}
+
+/* ----------------------------------------------------------------------------
+   APP DA AGÊNCIA — mesma superfície editorial.
+
+   O fundo antigo era um gradiente com duas manchas borradas e uma camada de
+   ruído por cima. Em ferramenta de trabalho isso só tira contraste do que
+   importa: a tabela de tarefas e o texto.
+   -------------------------------------------------------------------------- */
+
+[data-surface='app'] {
+  background: #ffffff;
+  color: #0b0c0e;
+  min-height: 100vh;
+}
+
+.dark [data-surface='app'] {
+  background: #0a0b0d;
+  color: #f5f6f7;
+}
+
+/* ----------------------------------------------------------------------------
+   Escala tipográfica do portal.
+
+   Fonte única de verdade: para deixar o portal inteiro maior ou menor, mexa
+   aqui e em nenhum outro lugar. As telas usam os nomes (.t-body, .t-meta…),
+   nunca px soltos — px espalhado pelo JSX foi o que fez a escala derreter uma
+   vez e não dá para afinar depois.
+   -------------------------------------------------------------------------- */
+
+[data-surface] {
+  --t-label: 13px;   /* rótulo de seção em caixa alta */
+  --t-meta: 14.5px;  /* data, contagem, apoio */
+  --t-ui: 15px;      /* botão, aba, campo de formulário */
+  --t-body: 16px;    /* texto de leitura */
+  --t-lead: 17px;    /* título de item em lista */
+}
+
+[data-surface] .t-label {
+  font-size: var(--t-label);
+  line-height: 1.4;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+[data-surface] .t-meta {
+  font-size: var(--t-meta);
+  line-height: 1.5;
+}
+
+[data-surface] .t-ui {
+  font-size: var(--t-ui);
+  line-height: 1.4;
+}
+
+[data-surface] .t-body {
+  font-size: var(--t-body);
+  line-height: 1.62;
+}
+
+[data-surface] .t-lead {
+  font-size: var(--t-lead);
+  line-height: 1.45;
+}
+
+/* Os overrides globais de .text-xs existem para o app da agência e não devem
+   vazar para o portal. */
+[data-surface] .text-xs {
+  font-size: var(--t-meta) !important;
+  line-height: 1.5 !important;
+}
+
+/* Âncoras do documento de estratégia: o capítulo não encosta no topo da tela
+   quando se pula por ele pelo índice. */
+[data-surface] [data-chapter] {
+  scroll-margin-top: 28px;
+}
+
+/* Transição de aba: conteúdo entra, nunca salta. Motion contido — 3/10. */
+@keyframes portal-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes portal-toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 8px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.portal-enter {
+  animation: portal-fade-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-enter,
+  [data-surface] * {
+    animation: none !important;
+    transition-duration: 1ms !important;
+  }
+}
+
 /* Custom scrollbars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;

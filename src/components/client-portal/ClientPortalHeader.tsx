@@ -1,214 +1,227 @@
 import React, { useState } from 'react';
-import { Client, Task } from '../../types';
-import { useAppStore } from '../../store';
-import {
-  ChevronLeft,
-  LogOut,
-  Share2,
-  Check,
-  Calendar as CalendarIcon,
-  Compass,
-  CheckCircle2,
-  Lightbulb,
-  FileText,
-  BarChart3,
-  Sparkles,
-  Zap,
-  TrendingUp,
-  Clock,
-  Send,
-  Layers,
-} from 'lucide-react';
-import { formatFriendlyDate } from '../../utils/dateFormatter';
+import { Client } from '../../types';
+import { ChevronLeft, LogOut, Link2, Check } from 'lucide-react';
 
-interface ClientPortalHeaderProps {
-  currentClient?: Client | undefined;
-  client?: Client | undefined;
-  clients?: Client[];
-  allClients?: Client[];
-  selectedClientId?: string;
-  onSelectClient?: (id: string) => void;
-  onSwitchClient?: (id: string) => void;
-  isClientLocked?: boolean;
-  onBackToApp?: () => void;
-  onLogout?: () => void;
-  activeTab: string;
-  onTabChange?: (tab: any) => void;
-  onSelectTab?: (tab: any) => void;
-  pendingApprovalCount?: number;
-  pendingApprovalsCount?: number;
-  onOpenSuggestionModal?: () => void;
-  onSuggestIdea?: () => void;
+export type PortalTabKey =
+  | 'resumo'
+  | 'aprovacoes'
+  | 'estrategia'
+  | 'calendario'
+  | 'arquivos'
+  | 'resultados';
+
+interface PortalTab {
+  key: PortalTabKey;
+  label: string;
+  /** Contagem só aparece quando exige ação do cliente. */
+  badge?: number;
 }
 
-export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = (props) => {
-  const currentClient = props.currentClient || props.client;
-  const clients = props.clients || props.allClients || [];
-  const selectedClientId = props.selectedClientId || currentClient?.id || '';
-  const onSelectClient = props.onSelectClient || props.onSwitchClient || (() => {});
-  const isClientLocked = !!props.isClientLocked;
-  const onBackToApp = props.onBackToApp;
-  const onLogout = props.onLogout;
-  const activeTab = props.activeTab;
-  const onTabChange = props.onTabChange || props.onSelectTab || (() => {});
-  const pendingApprovalCount = props.pendingApprovalCount ?? props.pendingApprovalsCount ?? 0;
-  const onOpenSuggestionModal = props.onOpenSuggestionModal || props.onSuggestIdea;
+interface ClientPortalHeaderProps {
+  client?: Client;
+  allClients: Client[];
+  activeTab: PortalTabKey;
+  onSelectTab: (tab: PortalTabKey) => void;
+  onSwitchClient: (id: string) => void;
+  isClientLocked: boolean;
+  onBackToApp?: () => void;
+  onLogout: () => void;
+  pendingCount: number;
+  /** A aba Resultados só existe quando há relatório para ler. */
+  hasReports: boolean;
+  /** Frase única de situação, calculada pelo Resumo. */
+  statusLine: string;
+}
+
+/**
+ * Cabeçalho do Portal do Cliente.
+ *
+ * Responde, nesta ordem, às três perguntas do modo Operate:
+ *   1. De quem é este espaço?   → identidade do cliente
+ *   2. Como está a situação?    → uma frase concreta, com números reais
+ *   3. Onde eu estou?           → aba ativa marcada sem ambiguidade
+ *
+ * Os rótulos são deliberadamente literais. "Aprovações" e "Arquivos" navegam
+ * melhor que "Central criativa" ou "Hub de marca".
+ */
+export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
+  client,
+  allClients,
+  activeTab,
+  onSelectTab,
+  onSwitchClient,
+  isClientLocked,
+  onBackToApp,
+  onLogout,
+  pendingCount,
+  hasReports,
+  statusLine,
+}) => {
   const [copiedLink, setCopiedLink] = useState(false);
 
-  const tasks = useAppStore((s) => s.tasks);
-  const clientTasks = tasks.filter((t) => t.clientId === currentClient?.id);
-  const inProdTasks = clientTasks.filter(
-    (t) =>
-      t.status === 'nao_iniciado' ||
-      t.status === 'em_andamento' ||
-      t.status === 'aguardar' ||
-      t.status === 'urgencia'
-  );
-  const approvedThisMonth = clientTasks.filter((t) => t.status === 'aprovado' || t.status === 'postado');
-
-  // Find next upcoming post date
-  const upcomingPosts = clientTasks
-    .filter((t) => t.postDate && t.status !== 'postado')
-    .sort((a, b) => (a.postDate || '').localeCompare(b.postDate || ''));
-  const nextPost = upcomingPosts[0];
-
-  const handleCopyPortalLink = () => {
-    try {
-      const url = window.location.href;
-      navigator.clipboard.writeText(url);
-      setCopiedLink(true);
-      setTimeout(() => setCopiedLink(false), 2500);
-    } catch {}
-  };
-
-  // Personalized Contact Name fallback
-  const responsibleName = currentClient?.name ? currentClient.name.split(' ')[0] : 'Branca';
-
-  const tabs = [
-    {
-      key: 'aprovacao',
-      label: 'Aprovações',
-      icon: CheckCircle2,
-      badge: pendingApprovalCount > 0 ? pendingApprovalCount : null,
-      badgeColor: 'bg-slate-900 text-white dark:bg-white dark:text-slate-900',
-    },
-    { key: 'planejamento', label: 'Planejamento', icon: CalendarIcon, badge: null },
-    { key: 'estrategia', label: 'Estratégia', icon: Compass, badge: null },
-    { key: 'sugestoes', label: 'Sugerir pautas', icon: Lightbulb, badge: null },
-    { key: 'relatorios', label: 'Resultados mensais', icon: BarChart3, badge: null },
+  const tabs: PortalTab[] = [
+    { key: 'resumo', label: 'Resumo' },
+    { key: 'aprovacoes', label: 'Aprovações', badge: pendingCount },
+    { key: 'estrategia', label: 'Estratégia' },
+    { key: 'calendario', label: 'Calendário' },
+    { key: 'arquivos', label: 'Arquivos' },
+    ...(hasReports ? [{ key: 'resultados' as PortalTabKey, label: 'Resultados' }] : []),
   ];
 
+  const handleCopyPortalLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      window.setTimeout(() => setCopiedLink(false), 2500);
+    } catch {
+      /* clipboard bloqueado pelo navegador — o link segue visível na barra de endereços */
+    }
+  };
+
   return (
-    <div id="clean-client-portal-header" className="relative z-10 w-full mb-8 pt-4">
-      {/* 1. Top Utility Navigation Bar */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 pb-6 flex items-center justify-between gap-4">
+    <header className="w-full border-b border-slate-200 dark:border-slate-800">
+      {/* Barra utilitária: contexto de sessão, nunca conteúdo. */}
+      <div className="mx-auto max-w-6xl px-5 sm:px-8 h-14 flex items-center justify-between gap-4">
         {isClientLocked ? (
-          <div className="flex items-center gap-3">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-950 font-bold text-xs">
-              BW
-            </span>
-            <div>
-              <p className="text-xs font-semibold text-slate-900 dark:text-white leading-tight">
-                {currentClient?.company || 'Área do Cliente'}
-              </p>
-              <p className="text-[11px] text-slate-400 dark:text-slate-500">
-                Portal de Acompanhamento
-              </p>
-            </div>
-          </div>
+          <span className="t-meta text-slate-500 dark:text-slate-400">
+            Portal Beewave
+          </span>
         ) : (
           <button
-            id="btn-back-from-portal"
             onClick={onBackToApp}
-            className="group flex items-center gap-2 text-xs font-medium text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
+            className="group inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
           >
             <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-            <span>Voltar ao Studio</span>
+            Voltar ao Studio
           </button>
         )}
 
-        {/* Right Controls */}
-        <div className="flex items-center gap-3 text-xs">
-          {isClientLocked ? (
-            <button
-              id="btn-portal-logout"
-              onClick={onLogout}
-              className="flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 hover:underline font-medium cursor-pointer"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span>Sair</span>
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-slate-400 dark:text-slate-500 text-xs hidden sm:inline">
-                Cliente:
+        <div className="flex items-center gap-5">
+          {!isClientLocked && allClients.length > 0 && (
+            <label className="flex items-center gap-2 t-meta">
+              <span className="text-slate-500 dark:text-slate-400 hidden sm:inline">
+                Visualizando como
               </span>
               <select
-                id="select-portal-client"
-                value={selectedClientId}
-                onChange={(e) => onSelectClient(e.target.value)}
-                className="text-xs font-semibold cursor-pointer bg-transparent border-b border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white focus:outline-none pb-0.5"
+                value={client?.id || ''}
+                onChange={(e) => onSwitchClient(e.target.value)}
+                className="bg-transparent font-medium text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-700 pb-0.5 focus:outline-none focus:border-slate-900 dark:focus:border-white cursor-pointer"
               >
-                {clients.map((c) => (
+                {allClients.map((c) => (
                   <option key={c.id} value={c.id} className="dark:bg-slate-900">
                     {c.company}
                   </option>
                 ))}
               </select>
-            </div>
+            </label>
           )}
 
           <button
             onClick={handleCopyPortalLink}
-            title="Copiar link do portal"
-            className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white cursor-pointer transition-colors"
+            className="inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
           >
-            {copiedLink ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Share2 className="h-3.5 w-3.5" />}
-            <span className="hidden sm:inline">{copiedLink ? 'Copiado' : 'Compartilhar'}</span>
+            {copiedLink ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-emerald-600" />
+                <span className="text-emerald-700 dark:text-emerald-400">Link copiado</span>
+              </>
+            ) : (
+              <>
+                <Link2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Copiar link</span>
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={onLogout}
+            className="inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sair
           </button>
         </div>
       </div>
 
-      {/* 2. Editorial Clean Title Area (No Containers, No Colored Badges, No Metric Tiles) */}
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 space-y-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-display font-semibold text-slate-900 dark:text-white tracking-tight">
-            {currentClient?.company || 'Área de Conteúdo'}
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Acompanhe as pautas, aprove publicações e visualize os resultados do seu plano.
-          </p>
-        </div>
-
-        {/* 3. Clean Underline Tabs (Separated by line) */}
-        <div className="flex items-center border-b border-slate-200/80 dark:border-slate-800 overflow-x-auto no-scrollbar gap-6 pt-2">
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                id={`tab-portal-${tab.key}`}
-                onClick={() => onTabChange(tab.key)}
-                className={`flex items-center gap-2 pb-3 text-xs sm:text-sm transition-all relative cursor-pointer whitespace-nowrap ${
-                  isActive
-                    ? 'text-slate-950 dark:text-white font-semibold'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 font-normal'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.badge !== null && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${tab.badgeColor || 'bg-slate-100 text-slate-700'}`}>
-                    {tab.badge}
-                  </span>
-                )}
-                {isActive && (
-                  <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-slate-950 dark:bg-white rounded-full" />
-                )}
-              </button>
-            );
-          })}
+      {/* Identidade do cliente + situação em uma frase. */}
+      <div className="mx-auto max-w-6xl px-5 sm:px-8 pt-7 pb-6">
+        <div className="flex items-center gap-4">
+          <ClientMark client={client} />
+          <div className="min-w-0">
+            <h1 className="font-display text-[26px] sm:text-[32px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight truncate">
+              {client?.company || 'Portal do cliente'}
+            </h1>
+            {/* A frase mais importante da tela: lida em tamanho de leitura. */}
+            <p className="t-body text-slate-600 dark:text-slate-400 mt-1">{statusLine}</p>
+          </div>
         </div>
       </div>
-    </div>
+
+      {/* Navegação. Uma aba leva a um lugar — nenhuma aba executa uma ação. */}
+      <nav
+        className="mx-auto max-w-6xl px-5 sm:px-8 flex items-center gap-7 overflow-x-auto no-scrollbar"
+        aria-label="Seções do portal"
+      >
+        {tabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              id={`tab-portal-${tab.key}`}
+              onClick={() => onSelectTab(tab.key)}
+              aria-current={isActive ? 'page' : undefined}
+              className={`relative flex items-center gap-2 pb-3 -mb-px border-b-2 t-ui whitespace-nowrap transition-colors duration-150 cursor-pointer ${
+                isActive
+                  ? 'border-slate-950 dark:border-white text-slate-950 dark:text-white font-semibold'
+                  : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              {tab.label}
+              {!!tab.badge && tab.badge > 0 && (
+                <span
+                  className={`grid place-items-center h-[18px] min-w-[18px] px-1 rounded-full t-meta font-semibold leading-none ${
+                    isActive
+                      ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950'
+                      : 'bg-amber-500 text-slate-950'
+                  }`}
+                >
+                  {tab.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+    </header>
+  );
+};
+
+/** Logo do cliente quando existe; iniciais como reserva estável. */
+const ClientMark: React.FC<{ client?: Client }> = ({ client }) => {
+  const initials = (client?.company || 'BW')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join('')
+    .toUpperCase();
+
+  if (client?.logoUrl) {
+    return (
+      <img
+        src={client.logoUrl}
+        alt=""
+        className="h-12 w-12 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-800"
+      />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-slate-950 dark:bg-white text-white dark:text-slate-950 font-display font-semibold t-meta"
+    >
+      {initials}
+    </span>
   );
 };

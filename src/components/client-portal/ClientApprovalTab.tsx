@@ -1,389 +1,337 @@
 import React, { useState } from 'react';
+import { Check, MessageSquare, Copy, Maximize2 } from 'lucide-react';
 import { Task, Client } from '../../types';
-import {
-  Check,
-  Copy,
-  MessageSquare,
-  Calendar,
-  Send,
-  Eye,
-  Clock,
-  CheckCircle2,
-} from 'lucide-react';
-import confetti from 'canvas-confetti';
+import { formatLongDate, formatTimestamp } from '../../utils/dateFormatter';
+import { getPostDay, byPostDate, describeActivity } from './portalStatus';
+import { Button, EmptyState, PostImage, PostListSkeleton, StatusPill } from '../ui';
+
+type ApprovalFilter = 'aguardando' | 'ajuste' | 'aprovados' | 'todas';
 
 interface ClientApprovalTabProps {
   tasks: Task[];
-  currentClient: Client;
-  onApproveTask: (taskId: string) => void;
-  onRequestAdjustments: (taskId: string, feedback: string) => void;
-  onOpenTaskDetails?: (task: Task) => void;
+  client: Client;
+  onApprove: (taskId: string) => void;
+  onRequestAdjustment: (taskId: string, feedback: string) => void;
+  onOpenTask: (task: Task) => void;
+  /** Filtro inicial, usado quando o Resumo manda o cliente para cá. */
+  initialFilter?: ApprovalFilter;
+  isHydrating?: boolean;
 }
 
+/**
+ * Aprovações — a tela que justifica o portal existir.
+ *
+ * Uma pauta, uma decisão: "Aprovar" é a única ação em tinta cheia. Tudo o mais
+ * (pedir ajuste, copiar legenda, ver detalhes) é secundário e pesa menos.
+ *
+ * O histórico aparece embaixo da pauta e só quando existe. Antes ele ocupava
+ * uma coluna fixa de um terço da largura que, na maioria das pautas, estava
+ * vazia.
+ */
 export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
   tasks,
-  currentClient,
-  onApproveTask,
-  onRequestAdjustments,
-  onOpenTaskDetails,
+  client,
+  onApprove,
+  onRequestAdjustment,
+  onOpenTask,
+  initialFilter = 'aguardando',
+  isHydrating = false,
 }) => {
-  const [activeFilter, setActiveFilter] = useState<'pending' | 'adjusted' | 'approved' | 'all'>('pending');
-  const [copiedCaptionId, setCopiedCaptionId] = useState<string | null>(null);
-  const [adjustingTaskId, setAdjustingTaskId] = useState<string | null>(null);
-  const [adjustmentComment, setAdjustmentComment] = useState('');
-  const [selectedSlideIndexByTask, setSelectedSlideIndexByTask] = useState<Record<string, number>>({});
+  const [filter, setFilter] = useState<ApprovalFilter>(initialFilter);
+  const [adjustingId, setAdjustingId] = useState<string | null>(null);
+  const [adjustmentText, setAdjustmentText] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [slideByTask, setSlideByTask] = useState<Record<string, number>>({});
 
-  // Filter tasks belonging to current client
-  const clientTasks = tasks.filter((t) => t.clientId === currentClient.id);
+  React.useEffect(() => setFilter(initialFilter), [initialFilter]);
 
-  const pendingTasks = clientTasks.filter((t) => t.status === 'em_aprovacao');
-  const adjustedTasks = clientTasks.filter((t) => t.status === 'alterar');
-  const approvedTasks = clientTasks.filter((t) => t.status === 'aprovado');
+  const awaiting = tasks.filter((t) => t.status === 'em_aprovacao');
+  const adjusting = tasks.filter((t) => t.status === 'alterar');
+  const approved = tasks.filter((t) => t.status === 'aprovado' || t.status === 'postado');
 
-  const displayedTasks = clientTasks.filter((t) => {
-    if (activeFilter === 'pending') return t.status === 'em_aprovacao';
-    if (activeFilter === 'adjusted') return t.status === 'alterar';
-    if (activeFilter === 'approved') return t.status === 'aprovado';
-    return true;
-  });
+  const filters: { key: ApprovalFilter; label: string; list: Task[] }[] = [
+    { key: 'aguardando', label: 'Aguardando você', list: awaiting },
+    { key: 'ajuste', label: 'Em ajuste', list: adjusting },
+    { key: 'aprovados', label: 'Aprovados', list: approved },
+    { key: 'todas', label: 'Todas', list: tasks },
+  ];
 
-  const handleCopyCaption = (id: string, text: string) => {
+  const visible = (filters.find((f) => f.key === filter)?.list || []).sort(byPostDate);
+  const clientName = client.company || client.name || 'Cliente';
+
+  const handleCopyCaption = async (task: Task) => {
     try {
-      navigator.clipboard.writeText(text);
-      setCopiedCaptionId(id);
-      setTimeout(() => setCopiedCaptionId(null), 2500);
-    } catch {}
-  };
-
-  const handleQuickApprove = (taskId: string) => {
-    onApproveTask(taskId);
-    confetti({
-      particleCount: 60,
-      spread: 55,
-      origin: { y: 0.7 },
-    });
+      await navigator.clipboard.writeText(task.caption || '');
+      setCopiedId(task.id);
+      window.setTimeout(() => setCopiedId(null), 2500);
+    } catch {
+      /* clipboard bloqueado — a legenda segue selecionável na tela */
+    }
   };
 
   const handleSubmitAdjustment = (taskId: string) => {
-    if (!adjustmentComment.trim()) return;
-    onRequestAdjustments(taskId, adjustmentComment.trim());
-    setAdjustingTaskId(null);
-    setAdjustmentComment('');
+    const text = adjustmentText.trim();
+    if (!text) return;
+    onRequestAdjustment(taskId, text);
+    setAdjustingId(null);
+    setAdjustmentText('');
+  };
+
+  const emptyCopy: Record<ApprovalFilter, { title: string; hint: string }> = {
+    aguardando: {
+      title: 'Nenhuma publicação esperando por você',
+      hint: 'Quando a Beewave enviar uma arte para aprovação, ela aparece aqui com a legenda e os botões de decisão.',
+    },
+    ajuste: {
+      title: 'Nenhum ajuste em andamento',
+      hint: 'Os ajustes que você pedir ficam listados aqui até a Beewave enviar a nova versão.',
+    },
+    aprovados: {
+      title: 'Nenhuma publicação aprovada ainda',
+      hint: 'Tudo que você aprovar fica guardado aqui, com a data da sua aprovação.',
+    },
+    todas: {
+      title: 'Ainda não há publicações neste portal',
+      hint: 'As pautas aparecem aqui assim que a Beewave começar a produzir o seu plano de conteúdo.',
+    },
   };
 
   return (
-    <div id="client-posts-approval-tab" className="w-full space-y-6">
-      {/* 1. Clean Filter Tabs Bar (No Redundant Metric Squares, Separated by line) */}
-      <div className="flex items-center gap-6 border-b border-slate-200/80 dark:border-slate-800 pb-3 flex-wrap">
-        <button
-          onClick={() => setActiveFilter('pending')}
-          className={`text-xs sm:text-sm transition-colors cursor-pointer ${
-            activeFilter === 'pending'
-              ? 'text-slate-950 dark:text-white font-semibold'
-              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white font-normal'
-          }`}
-        >
-          Aguardando aprovação ({pendingTasks.length})
-        </button>
-
-        <button
-          onClick={() => setActiveFilter('adjusted')}
-          className={`text-xs sm:text-sm transition-colors cursor-pointer ${
-            activeFilter === 'adjusted'
-              ? 'text-slate-950 dark:text-white font-semibold'
-              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white font-normal'
-          }`}
-        >
-          Ajustes solicitados ({adjustedTasks.length})
-        </button>
-
-        <button
-          onClick={() => setActiveFilter('approved')}
-          className={`text-xs sm:text-sm transition-colors cursor-pointer ${
-            activeFilter === 'approved'
-              ? 'text-slate-950 dark:text-white font-semibold'
-              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white font-normal'
-          }`}
-        >
-          Aprovados ({approvedTasks.length})
-        </button>
-
-        <button
-          onClick={() => setActiveFilter('all')}
-          className={`text-xs sm:text-sm transition-colors cursor-pointer ${
-            activeFilter === 'all'
-              ? 'text-slate-950 dark:text-white font-semibold'
-              : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white font-normal'
-          }`}
-        >
-          Todas ({clientTasks.length})
-        </button>
+    <div className="portal-enter space-y-8">
+      {/* Filtros. Contagem sempre visível — o número é a informação. */}
+      <div className="flex items-center gap-6 flex-wrap border-b border-slate-200 dark:border-slate-800 pb-3">
+        {filters.map((f) => {
+          const isActive = filter === f.key;
+          return (
+            <button
+              key={f.key}
+              onClick={() => setFilter(f.key)}
+              aria-pressed={isActive}
+              className={`t-ui transition-colors duration-150 cursor-pointer ${
+                isActive
+                  ? 'text-slate-950 dark:text-white font-semibold'
+                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              {f.label}
+              <span
+                className={`ml-1.5 tabular-nums ${
+                  isActive ? 'text-slate-500 dark:text-slate-400' : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                {f.list.length}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* 2. Posts List Separated by Lines (No Cards, No Containers, Editorial Minimalist Layout) */}
-      {displayedTasks.length === 0 ? (
-        <div className="py-16 text-center space-y-2">
-          <p className="text-sm font-medium text-slate-900 dark:text-white">
-            Nenhuma publicação nesta categoria no momento
-          </p>
-          <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto">
-            Novos conteúdos enviados pela equipe para aprovação serão exibidos aqui.
-          </p>
-        </div>
+      {isHydrating ? (
+        <PostListSkeleton count={2} />
+      ) : visible.length === 0 ? (
+        <EmptyState title={emptyCopy[filter].title} hint={emptyCopy[filter].hint} />
       ) : (
-        <div className="divide-y divide-slate-200/80 dark:divide-slate-800">
-          {displayedTasks.map((task) => {
-            const isPending = task.status === 'em_aprovacao';
-            const isApproved = task.status === 'aprovado';
-            const isAdjusted = task.status === 'alterar';
+        <div className="divide-y divide-slate-200 dark:divide-slate-800">
+          {visible.map((task) => {
+            const files = (task.files || []).filter((f) => f.dataUrl || f.url);
+            const slideIdx = slideByTask[task.id] || 0;
+            const activeImg = files[slideIdx]?.dataUrl || files[slideIdx]?.url || files[0]?.dataUrl || files[0]?.url;
+            const isAwaiting = task.status === 'em_aprovacao';
+            const postDay = getPostDay(task);
 
-            const filesList = task.files?.filter((f) => f.dataUrl || f.url) || [];
-            const activeSlideIdx = selectedSlideIndexByTask[task.id] || 0;
-            const currentImg = filesList[activeSlideIdx]?.dataUrl || filesList[activeSlideIdx]?.url || filesList[0]?.dataUrl || filesList[0]?.url;
-
-            const formatLabel = task.format || task.copyMode || 'Post';
-            const dateStr = task.date || task.postDate;
-
-            // Activity / Adjustments history
-            const adjustmentsHistory = task.activity?.filter((a) => a.type === 'client_change' || a.type === 'status_change') || [];
+            const history = (task.activity || [])
+              .map((a) => ({ entry: a, label: describeActivity(a, clientName) }))
+              .filter((a): a is { entry: typeof a.entry; label: string } => a.label !== null)
+              .reverse()
+              .slice(0, 4);
 
             return (
-              <div
-                key={task.id}
-                className="py-10 first:pt-4 grid grid-cols-1 lg:grid-cols-12 gap-8 items-start"
-              >
-                {/* Column 1: Image / Media Preview (4 cols) */}
-                <div className="lg:col-span-4 space-y-3">
-                  <div
-                    onClick={() => onOpenTaskDetails && onOpenTaskDetails(task)}
-                    className="relative w-full aspect-square rounded-xl overflow-hidden bg-slate-100 dark:bg-slate-800/80 border border-slate-200/70 dark:border-slate-800 cursor-pointer group"
+              <article key={task.id} className="py-9 grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* Arte */}
+                <div className="lg:col-span-4 space-y-2.5">
+                  <button
+                    onClick={() => onOpenTask(task)}
+                    aria-label={`Ampliar arte de ${task.title}`}
+                    className="relative block w-full aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group cursor-pointer"
                   >
-                    {currentImg ? (
-                      <img
-                        src={currentImg}
-                        alt={task.title}
-                        className="h-full w-full object-cover group-hover:scale-[1.01] transition-transform duration-200"
-                      />
-                    ) : (
-                      <div className="h-full w-full flex flex-col items-center justify-center text-slate-400 p-6 text-center">
-                        <span className="text-3xl mb-1">🖼️</span>
-                        <span className="text-xs font-medium">Prévia da Arte</span>
-                      </div>
-                    )}
+                    <PostImage src={activeImg} alt={task.title} className="h-full w-full" />
+                    <span className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/25 transition-colors duration-150 grid place-items-center">
+                      <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 inline-flex items-center gap-1.5 t-meta font-medium text-white">
+                        <Maximize2 className="h-3.5 w-3.5" />
+                        Ampliar
+                      </span>
+                    </span>
+                  </button>
 
-                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-medium transition-opacity">
-                      <Eye className="h-4 w-4 mr-1.5" /> Ampliar Detalhes
-                    </div>
-                  </div>
-
-                  {/* Multi-slide carousel thumbnails if available */}
-                  {filesList.length > 1 && (
-                    <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-                      {filesList.map((f, fIdx) => (
+                  {files.length > 1 && (
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                      {files.map((f, i) => (
                         <button
-                          key={fIdx}
-                          type="button"
-                          onClick={() => setSelectedSlideIndexByTask((prev) => ({ ...prev, [task.id]: fIdx }))}
-                          className={`h-12 w-12 shrink-0 rounded-lg overflow-hidden border transition-all cursor-pointer ${
-                            activeSlideIdx === fIdx
-                              ? 'border-slate-900 dark:border-white ring-1 ring-slate-900/30'
-                              : 'border-slate-200 dark:border-slate-700 opacity-60 hover:opacity-100'
+                          key={f.id || i}
+                          onClick={() => setSlideByTask((p) => ({ ...p, [task.id]: i }))}
+                          aria-label={`Ver imagem ${i + 1} de ${files.length}`}
+                          className={`h-11 w-11 shrink-0 rounded-md overflow-hidden border transition-all duration-150 cursor-pointer ${
+                            slideIdx === i
+                              ? 'border-slate-950 dark:border-white'
+                              : 'border-slate-200 dark:border-slate-800 opacity-55 hover:opacity-100'
                           }`}
                         >
-                          <img src={f.dataUrl || f.url} alt={`Slide ${fIdx + 1}`} className="h-full w-full object-cover" />
+                          <img
+                            src={f.dataUrl || f.url}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
 
-                {/* Column 2: Content, Caption & Approval Actions (5 cols) */}
-                <div className="lg:col-span-5 space-y-4">
-                  {/* Status Pill */}
-                  <div>
-                    {isPending && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
-                        Em aprovação
-                      </span>
-                    )}
-                    {isApproved && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-emerald-50 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        <Check className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-                        Aprovado
-                      </span>
-                    )}
-                    {isAdjusted && (
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-xs font-medium bg-rose-50 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                        <Clock className="h-3 w-3 text-rose-500" />
-                        Ajuste solicitado
-                      </span>
-                    )}
-                  </div>
+                {/* Conteúdo e decisão */}
+                <div className="lg:col-span-8 min-w-0">
+                  <StatusPill status={task.status} long />
 
-                  {/* Title & Metadata */}
-                  <div className="space-y-1">
-                    <h3 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">
-                      {task.selectedHeadline || task.headline || task.title}
-                    </h3>
-                    <p className="text-xs text-slate-400 dark:text-slate-500">
-                      {formatLabel} {dateStr ? `• ${dateStr}` : ''}
-                    </p>
-                  </div>
+                  <h3 className="mt-3 font-display text-[20px] sm:text-[22px] font-semibold tracking-[-0.015em] text-slate-950 dark:text-white leading-snug">
+                    {task.selectedHeadline || task.headline || task.title}
+                  </h3>
 
-                  {/* Caption Rendered Directly (No nested container card) */}
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <p className="mt-1.5 t-meta text-slate-500 dark:text-slate-400">
+                    {task.format || 'Publicação'}
+                    {postDay && ` · publicação prevista para ${formatLongDate(postDay)}`}
+                  </p>
+
+                  {/* Legenda */}
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between gap-4 mb-2">
+                      <span className="t-label text-slate-500">
                         Legenda
                       </span>
                       {task.caption && (
                         <button
-                          type="button"
-                          onClick={() => handleCopyCaption(task.id, task.caption || '')}
-                          className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer transition-colors"
+                          onClick={() => handleCopyCaption(task)}
+                          className="inline-flex items-center gap-1.5 t-ui text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
                         >
-                          {copiedCaptionId === task.id ? (
+                          {copiedId === task.id ? (
                             <>
-                              <Check className="h-3 w-3 text-emerald-600" />
-                              <span className="text-emerald-600 font-medium">Copiada</span>
+                              <Check className="h-3.5 w-3.5 text-emerald-600" />
+                              <span className="text-emerald-700 dark:text-emerald-400">Copiada</span>
                             </>
                           ) : (
                             <>
-                              <Copy className="h-3 w-3" />
-                              <span>Copiar</span>
+                              <Copy className="h-3.5 w-3.5" />
+                              Copiar
                             </>
                           )}
                         </button>
                       )}
                     </div>
-
-                    <div className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed whitespace-pre-wrap select-text">
+                    <p className="t-body leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
                       {task.caption || (
-                        <span className="text-slate-400 italic">Legenda em desenvolvimento pela equipe.</span>
+                        <span className="text-slate-400 dark:text-slate-500">
+                          A legenda ainda está sendo escrita pela equipe.
+                        </span>
                       )}
-                    </div>
+                    </p>
                   </div>
 
-                  {/* Actions Row */}
-                  <div className="pt-3 flex items-center gap-3">
-                    {isPending && (
+                  {/* Decisão — uma ação dominante */}
+                  <div className="mt-7 flex items-center gap-3 flex-wrap">
+                    {isAwaiting ? (
                       <>
-                        <button
-                          type="button"
-                          id={`btn-approve-post-${task.id}`}
-                          onClick={() => handleQuickApprove(task.id)}
-                          className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 transition-colors cursor-pointer"
+                        <Button variant="primary" icon={Check} onClick={() => onApprove(task.id)}>
+                          Aprovar publicação
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          icon={MessageSquare}
+                          onClick={() => {
+                            setAdjustingId(adjustingId === task.id ? null : task.id);
+                            setAdjustmentText('');
+                          }}
                         >
-                          <Check className="h-3.5 w-3.5" />
-                          <span>Aprovar</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          id={`btn-adjust-post-${task.id}`}
-                          onClick={() => setAdjustingTaskId(adjustingTaskId === task.id ? null : task.id)}
-                          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-xs font-medium border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 transition-colors cursor-pointer"
-                        >
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          <span>Pedir ajuste</span>
-                        </button>
+                          Pedir ajuste
+                        </Button>
                       </>
+                    ) : (
+                      <Button variant="secondary" size="sm" onClick={() => onOpenTask(task)}>
+                        Ver detalhes
+                      </Button>
                     )}
 
-                    {isApproved && (
-                      <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                        <Check className="h-4 w-4" />
-                        Pauta aprovada
-                      </span>
-                    )}
-
-                    {onOpenTaskDetails && (
+                    {isAwaiting && (
                       <button
-                        type="button"
-                        onClick={() => onOpenTaskDetails(task)}
-                        className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer ml-auto"
+                        onClick={() => onOpenTask(task)}
+                        className="ml-auto t-ui text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
                       >
                         Ver detalhes
                       </button>
                     )}
                   </div>
 
-                  {/* Inline Adjustment Input */}
-                  {adjustingTaskId === task.id && (
-                    <div className="pt-3 space-y-2 border-t border-slate-200/80 dark:border-slate-800 animate-in fade-in">
-                      <label className="text-xs font-medium text-slate-700 dark:text-slate-300 block">
-                        O que você gostaria de ajustar nesta publicação?
+                  {/* Formulário de ajuste */}
+                  {adjustingId === task.id && (
+                    <div className="mt-5 pt-5 border-t border-slate-200 dark:border-slate-800 portal-enter">
+                      <label
+                        htmlFor={`ajuste-${task.id}`}
+                        className="block t-lead font-medium text-slate-900 dark:text-white"
+                      >
+                        O que precisa mudar nesta publicação?
                       </label>
+                      <p className="mt-1 t-meta text-slate-500 dark:text-slate-400">
+                        Seja específico — quanto mais claro o pedido, menos idas e voltas.
+                      </p>
                       <textarea
-                        value={adjustmentComment}
-                        onChange={(e) => setAdjustmentComment(e.target.value)}
-                        placeholder="Descreva aqui o ajuste na arte ou no texto..."
+                        id={`ajuste-${task.id}`}
+                        value={adjustmentText}
+                        onChange={(e) => setAdjustmentText(e.target.value)}
                         rows={3}
-                        className="w-full text-xs p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white focus:border-slate-900 dark:focus:border-white focus:outline-none"
+                        autoFocus
+                        placeholder="Ex.: trocar a foto do segundo card e tirar o preço da legenda."
+                        className="mt-3 w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent p-3 t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors"
                       />
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          type="button"
+                      <div className="mt-3 flex items-center justify-end gap-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => {
-                            setAdjustingTaskId(null);
-                            setAdjustmentComment('');
+                            setAdjustingId(null);
+                            setAdjustmentText('');
                           }}
-                          className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                         >
                           Cancelar
-                        </button>
-                        <button
-                          type="button"
+                        </Button>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          disabled={!adjustmentText.trim()}
                           onClick={() => handleSubmitAdjustment(task.id)}
-                          disabled={!adjustmentComment.trim()}
-                          className="px-4 py-1.5 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 cursor-pointer disabled:opacity-50"
                         >
                           Enviar ajuste
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   )}
-                </div>
 
-                {/* Column 3: Histórico de ajustes (3 cols) */}
-                <div className="lg:col-span-3 space-y-3 pt-1">
-                  <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Histórico de ajustes
-                  </h4>
-
-                  {adjustmentsHistory.length === 0 && !task.clientFeedback ? (
-                    <p className="text-xs text-slate-400">
-                      Nenhum ajuste solicitado para esta pauta até o momento.
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {task.clientFeedback && (
-                        <div className="text-xs space-y-1 pb-2 border-b border-slate-100 dark:border-slate-800">
-                          <span className="font-semibold text-rose-600 dark:text-rose-400">
-                            Último feedback do cliente:
-                          </span>
-                          <p className="text-slate-700 dark:text-slate-300 italic">
-                            "{task.clientFeedback}"
-                          </p>
-                        </div>
-                      )}
-
-                      {adjustmentsHistory.map((act, aIdx) => (
-                        <div key={aIdx} className="text-xs space-y-0.5">
-                          <div className="flex items-center justify-between text-slate-400 text-[11px]">
-                            <span>{act.userName || 'Estúdio'}</span>
-                            <span>{act.createdAt ? new Date(act.createdAt).toLocaleDateString('pt-BR') : ''}</span>
-                          </div>
-                          <p className="text-slate-700 dark:text-slate-300">
-                            {act.text}
-                          </p>
-                        </div>
-                      ))}
+                  {/* Histórico — só quando existe */}
+                  {history.length > 0 && (
+                    <div className="mt-7 pt-5 border-t border-slate-200 dark:border-slate-800">
+                      <span className="t-label text-slate-500">
+                        Histórico
+                      </span>
+                      <ul className="mt-3 space-y-2.5">
+                        {history.map(({ entry, label }, i) => (
+                          <li key={`${entry.ts}-${i}`} className="flex flex-col sm:flex-row sm:gap-4 t-meta">
+                            <span className="shrink-0 w-[104px] whitespace-nowrap text-slate-400 dark:text-slate-500 tabular-nums">
+                              {formatTimestamp(entry.ts)}
+                            </span>
+                            <span className="text-slate-700 dark:text-slate-300">{label}</span>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
-              </div>
+              </article>
             );
           })}
         </div>

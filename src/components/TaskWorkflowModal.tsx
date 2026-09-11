@@ -52,6 +52,18 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
 
   // Local draft state for smooth editing and auto-save
   const [title, setTitle] = useState(task?.title || 'Nova tarefa');
+
+  /**
+   * Mantém a altura do título colada ao conteúdo: uma linha quando cabe,
+   * duas ou três quando o headline é longo.
+   */
+  const titleRef = React.useRef<HTMLTextAreaElement>(null);
+  React.useLayoutEffect(() => {
+    const el = titleRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [title]);
   const [clientId, setClientId] = useState(task?.clientId || '');
   const [status, setStatus] = useState(task?.status || 'nao_iniciado');
   const [categoryId, setCategoryId] = useState(task?.categoryId || '');
@@ -446,16 +458,17 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
     <div
       id="task-modal-backdrop"
       onClick={handleCloseModal}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-slate-950/55 overflow-y-auto"
     >
       {/* Modal Container */}
       <div
         id="task-modal-card"
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-7xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-slate-200/80 dark:border-slate-800 flex flex-col my-auto max-h-[95vh] overflow-hidden"
+        data-surface="app"
+        className="relative w-full max-w-7xl bg-white dark:bg-[#0f1114] sm:rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 flex flex-col my-auto max-h-[96vh] overflow-hidden"
       >
         {/* TOP BAR / HEADER */}
-        <div className="flex flex-wrap items-center justify-between gap-3 px-6 sm:px-8 pt-6 pb-4 border-b border-slate-100 dark:border-slate-800/80 shrink-0">
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 sm:px-7 h-16 border-b border-slate-200 dark:border-slate-800 shrink-0">
           {/* Left Actions */}
           <div className="flex flex-wrap items-center gap-2.5 sm:gap-3">
             {/* Iniciar / Pausar Tempo Button */}
@@ -463,10 +476,10 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               id="btn-task-timer-toggle"
               type="button"
               onClick={handleToggleTimer}
-              className={`px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer shadow-xs ${
+              className={`h-8 px-3 rounded-lg t-ui font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
                 isTimerActive
-                  ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
-                  : 'bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-white text-white dark:text-slate-900'
+                  ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
+                  : 'border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
               }`}
             >
               {isTimerActive ? (
@@ -485,9 +498,9 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
             {/* Tempo Display Badge */}
             <div
               id="badge-task-time-spent"
-              className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl text-xs font-mono font-bold tracking-wider border border-slate-200/60 dark:border-slate-700/60 flex items-center select-none"
+              className="t-meta text-slate-500 dark:text-slate-400 tabular-nums select-none"
             >
-              <span>TEMPO: {formatTimer(timerSeconds)}</span>
+              <span>{formatTimer(timerSeconds)}</span>
             </div>
 
             {/* Duplicar Button */}
@@ -495,7 +508,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               id="btn-task-duplicate"
               type="button"
               onClick={handleDuplicate}
-              className="border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="h-8 px-3 rounded-lg t-ui text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Criar uma cópia desta tarefa"
             >
               <Copy className="h-3.5 w-3.5" />
@@ -507,7 +520,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               id="btn-task-delete"
               type="button"
               onClick={handleDeleteClick}
-              className="border border-slate-200 dark:border-slate-700 hover:bg-rose-50 dark:hover:bg-rose-950/30 hover:border-rose-200 dark:hover:border-rose-800 text-slate-600 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 px-3.5 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+              className="h-8 px-3 rounded-lg t-ui text-slate-600 dark:text-slate-300 hover:text-rose-700 hover:bg-rose-50 dark:hover:text-rose-400 dark:hover:bg-rose-950/40 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
               title="Mover para a lixeira"
             >
               <Trash2 className="h-3.5 w-3.5" />
@@ -518,22 +531,20 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
             {isAwaitingApproval ? (
               <div
                 id="badge-awaiting-approval"
-                className="flex items-center gap-2.5 px-4 py-1.5 rounded-2xl border border-sky-200 dark:border-sky-800 bg-sky-50/90 dark:bg-sky-950/40 text-sky-900 dark:text-sky-100 shadow-2xs"
+                className="flex items-center gap-2 t-ui text-sky-700 dark:text-sky-400"
               >
-                <Eye className="h-4 w-4 text-sky-600 dark:text-sky-400 shrink-0" />
-                <div className="flex flex-col text-left leading-tight">
-                  <span className="font-bold text-xs">Aguardando Aprovação</span>
-                  <span className="text-[11px] text-sky-700/90 dark:text-sky-300/90">
-                    Disponível no Portal do Cliente {clientCompany ? `(${clientCompany})` : ''}.
-                  </span>
-                </div>
+                <span className="h-1.5 w-1.5 rounded-full bg-sky-500 shrink-0" aria-hidden="true" />
+                <span className="font-medium">Aguardando aprovação</span>
+                <span className="t-meta text-slate-500 dark:text-slate-400">
+                  no portal{clientCompany ? ` de ${clientCompany}` : ''}
+                </span>
               </div>
             ) : (
               <button
                 id="btn-send-for-approval"
                 type="button"
                 onClick={handleSendForApproval}
-                className="px-5 py-2 rounded-2xl bg-sky-500 hover:bg-sky-600 active:bg-sky-700 text-white font-semibold text-xs sm:text-sm shadow-xs hover:shadow transition-all cursor-pointer flex items-center gap-2"
+                className="h-8 px-3.5 rounded-lg border border-slate-300 dark:border-slate-700 t-ui font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer inline-flex items-center gap-1.5"
                 title="Submeter para aprovação no portal do cliente"
               >
                 <span>Enviar para aprovação</span>
@@ -547,7 +558,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               id="btn-save-and-close"
               type="button"
               onClick={handleCloseModal}
-              className="bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-6 py-2.5 rounded-full shadow-xs hover:shadow transition-all cursor-pointer"
+              className="h-9 px-4 rounded-lg bg-slate-950 dark:bg-white text-white dark:text-slate-950 t-ui font-medium hover:bg-slate-800 dark:hover:bg-slate-200 transition-colors cursor-pointer"
             >
               Salvar e fechar
             </button>
@@ -555,20 +566,29 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
         </div>
 
         {/* MODAL BODY (Scrollable with generous breathing space) */}
-        <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-6 space-y-6">
-          {/* TASK TITLE (Editable, bold display heading) */}
+        <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-6 space-y-6">
+          {/* Título. Textarea e não input: título longo precisa quebrar linha em
+              vez de rolar na horizontal, e a altura acompanha o texto. */}
           <div className="w-full">
-            <input
+            <textarea
               id="input-task-title"
-              type="text"
+              ref={titleRef}
+              rows={1}
               value={title}
               onChange={(e) => {
                 const val = e.target.value;
                 setTitle(val);
                 handleFieldChange('title', val);
               }}
+              onKeyDown={(e) => {
+                // Enter confirma; quebra de linha real não faz sentido num título.
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  (e.target as HTMLTextAreaElement).blur();
+                }
+              }}
               placeholder="Nova tarefa"
-              className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white bg-transparent border-none outline-none w-full placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-0 tracking-tight leading-tight"
+              className="font-display text-[26px] sm:text-[30px] font-semibold tracking-[-0.02em] leading-tight text-slate-950 dark:text-white bg-transparent border-none outline-none w-full resize-none overflow-hidden placeholder:text-slate-300 dark:placeholder:text-slate-600 focus:ring-0"
             />
           </div>
 
@@ -582,7 +602,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 <div>
                   <label
                     htmlFor="select-task-client"
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block t-label text-slate-500 mb-1.5"
                   >
                     Cliente
                   </label>
@@ -594,7 +614,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                       setClientId(val);
                       handleFieldChange('clientId', val);
                     }}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/10 cursor-pointer"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors cursor-pointer"
                   >
                     <option value="">Selecione o cliente</option>
                     {clients.map((c) => (
@@ -609,7 +629,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 <div>
                   <label
                     htmlFor="select-task-status"
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block t-label text-slate-500 mb-1.5"
                   >
                     Status
                   </label>
@@ -621,7 +641,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                       setStatus(val);
                       handleFieldChange('status', val);
                     }}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/10 cursor-pointer"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors cursor-pointer"
                   >
                     {statuses.map((s) => (
                       <option key={s.key} value={s.key}>
@@ -633,14 +653,14 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
 
                 {/* Responsáveis */}
                 <div className="relative" ref={assigneeDropdownRef}>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  <label className="block t-label text-slate-500 mb-1.5">
                     Responsáveis
                   </label>
                   <button
                     id="btn-assignee-dropdown-toggle"
                     type="button"
                     onClick={() => setIsAssigneeDropdownOpen(!isAssigneeDropdownOpen)}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/10 flex items-center justify-between gap-1.5 text-left cursor-pointer"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors flex items-center justify-between gap-1.5 text-left cursor-pointer"
                   >
                     <div className="flex items-center gap-1.5 truncate">
                       {selectedUsers.length > 0 ? (
@@ -667,8 +687,8 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
 
                   {/* Assignee Selection Popover */}
                   {isAssigneeDropdownOpen && (
-                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-slate-800 rounded-2xl shadow-xl border border-slate-200 dark:border-slate-700 p-2 z-50 animate-in fade-in zoom-in-95 duration-100">
-                      <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 px-2 py-1">
+                    <div className="absolute left-0 top-full mt-1.5 w-64 bg-white dark:bg-[#15181c] rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 p-1.5 z-50">
+                      <div className="t-label text-slate-500 px-2 py-1.5">
                         Membros da equipe
                       </div>
                       <div className="max-h-48 overflow-y-auto space-y-1 mt-1">
@@ -689,7 +709,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                                 handleFieldChange('assigneeIds', next);
                                 handleFieldChange('assigneeId', next[0] || '');
                               }}
-                              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/60 text-xs font-medium text-slate-900 dark:text-white cursor-pointer transition-colors"
+                              className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 t-ui text-slate-900 dark:text-white cursor-pointer transition-colors"
                             >
                               <div className="flex items-center gap-2 truncate">
                                 <div
@@ -713,7 +733,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 <div>
                   <label
                     htmlFor="input-task-postdate"
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block t-label text-slate-500 mb-1.5"
                   >
                     Data de Publicação
                   </label>
@@ -727,7 +747,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                         setPostDate(val);
                         handleFieldChange('postDate', val);
                       }}
-                      className="w-full h-11 px-3 pr-8 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/10 cursor-pointer"
+                      className="w-full h-10 px-3 pr-8 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors cursor-pointer"
                     />
                     <Calendar className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
                   </div>
@@ -737,7 +757,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 <div>
                   <label
                     htmlFor="select-task-category"
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block t-label text-slate-500 mb-1.5"
                   >
                     Formato
                   </label>
@@ -749,7 +769,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                       setCategoryId(val);
                       handleFieldChange('categoryId', val);
                     }}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/10 cursor-pointer"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors cursor-pointer"
                   >
                     <option value="">Selecione o formato</option>
                     {categories.map((cat) => (
@@ -764,7 +784,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 <div>
                   <label
                     htmlFor="select-task-funnel"
-                    className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5"
+                    className="block t-label text-slate-500 mb-1.5"
                   >
                     Funil
                   </label>
@@ -776,7 +796,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                       setFunnelStage(val);
                       handleFieldChange('funnelStage', val);
                     }}
-                    className="w-full h-11 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs sm:text-sm font-medium text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:focus:ring-white/10 cursor-pointer"
+                    className="w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors cursor-pointer"
                   >
                     <option value="">Selecione o funil</option>
                     <option value="topo">Topo de Funil (Atração)</option>
@@ -791,11 +811,11 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               <div className="flex-1 flex flex-col">
                 <label
                   htmlFor="textarea-task-briefing"
-                  className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2"
+                  className="block t-label text-slate-500 mb-2"
                 >
                   Briefing & Direcionamento
                 </label>
-                <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-4 focus-within:ring-2 focus-within:ring-slate-900/10 dark:focus-within:ring-white/10 transition-all flex-1 flex flex-col min-h-[260px]">
+                <div className="rounded-lg border border-slate-300 dark:border-slate-700 p-3.5 focus-within:border-slate-900 dark:focus-within:border-white transition-colors flex-1 flex flex-col min-h-[260px]">
                   <textarea
                     id="textarea-task-briefing"
                     value={briefingText}
@@ -805,7 +825,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                       handleFieldChange('briefingText', val);
                     }}
                     placeholder="Instruções, referências, direcionamento do cliente..."
-                    className="w-full flex-1 min-h-[220px] bg-transparent border-none outline-none resize-none text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 leading-relaxed"
+                    className="w-full flex-1 min-h-[220px] bg-transparent border-none outline-none resize-none t-body text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -815,11 +835,11 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
             <div className="lg:col-span-5 flex flex-col h-full">
               <label
                 htmlFor="textarea-task-caption"
-                className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2"
+                className="block t-label text-slate-500 mb-2"
               >
                 Legenda
               </label>
-              <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 p-4 sm:p-5 focus-within:ring-2 focus-within:ring-slate-900/10 dark:focus-within:ring-white/10 transition-all flex-1 flex flex-col min-h-[500px]">
+              <div className="rounded-lg border border-slate-300 dark:border-slate-700 p-3.5 sm:p-4 focus-within:border-slate-900 dark:focus-within:border-white transition-colors flex-1 flex flex-col min-h-[500px]">
                 <textarea
                   id="textarea-task-caption"
                   value={caption}
@@ -829,7 +849,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                     handleFieldChange('caption', val);
                   }}
                   placeholder="Escreva ou cole a legenda do post aqui..."
-                  className="w-full flex-1 min-h-[420px] bg-transparent border-none outline-none resize-none text-xs sm:text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 leading-relaxed font-sans"
+                  className="w-full flex-1 min-h-[420px] bg-transparent border-none outline-none resize-none t-body text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
                 />
 
                 {/* Copiar Legenda Button & Length Counter */}
@@ -863,12 +883,12 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
 
             {/* COLUMN 3: ARTE (Span 3) */}
             <div className="lg:col-span-3 flex flex-col">
-              <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+              <label className="block t-label text-slate-500 mb-2">
                 Arte
               </label>
 
               {/* Link do Drive, Figma, Canva... */}
-              <div className="flex items-center gap-2 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/60 px-3.5 py-2.5 mb-3 focus-within:ring-2 focus-within:ring-slate-900/10 dark:focus-within:ring-white/10 transition-all">
+              <div className="flex items-center gap-2 rounded-lg border border-slate-300 dark:border-slate-700 px-3 h-10 mb-3 focus-within:border-slate-900 dark:focus-within:border-white transition-colors">
                 <Link2 className="h-4 w-4 text-slate-400 shrink-0" />
                 <input
                   id="input-task-drivelink"
@@ -880,7 +900,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                     handleFieldChange('driveLink', val);
                   }}
                   placeholder="Link do Drive, Figma, Canva..."
-                  className="flex-1 bg-transparent border-none outline-none text-xs text-slate-900 dark:text-white placeholder:text-slate-400"
+                  className="flex-1 bg-transparent border-none outline-none t-ui text-slate-900 dark:text-white placeholder:text-slate-400"
                 />
                 {driveLink && (
                   <a
@@ -910,7 +930,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                   type="button"
                   disabled={isUploading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-1 rounded-2xl bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 py-2.5 px-3 flex items-center justify-center gap-2 text-xs sm:text-sm font-medium transition-colors cursor-pointer disabled:opacity-50"
+                  className="flex-1 h-10 rounded-lg border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 px-3 flex items-center justify-center gap-2 t-ui font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-45"
                 >
                   <Upload className="h-4 w-4 text-slate-500" />
                   <span>{isUploading ? 'Enviando...' : 'Enviar arquivos'}</span>
@@ -920,7 +940,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                     id="btn-download-all-files"
                     type="button"
                     onClick={handleDownloadAllFiles}
-                    className="rounded-2xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 py-2.5 px-3 flex items-center justify-center gap-1.5 text-xs font-medium transition-colors cursor-pointer shrink-0"
+                    className="h-10 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 flex items-center justify-center gap-1.5 t-ui font-medium transition-colors cursor-pointer shrink-0"
                     title="Baixar todas as imagens individualmente (sem zipar)"
                   >
                     <Download className="h-4 w-4 text-slate-500" />
@@ -941,7 +961,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                   files.map((file) => (
                     <div
                       key={file.id}
-                      className="group relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 aspect-square flex flex-col justify-end shadow-2xs hover:shadow-md transition-all cursor-pointer"
+                      className="group relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 aspect-square flex flex-col justify-end transition-colors hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer"
                       onClick={() => {
                         setPreviewMediaUrl(file.dataUrl || file.url || null);
                         setPreviewMediaName(file.name);

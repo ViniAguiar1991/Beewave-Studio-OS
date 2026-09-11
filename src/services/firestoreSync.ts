@@ -16,6 +16,20 @@ let isListening = false;
 let isSyncingToCloud = false;
 
 /**
+ * Trava de desenvolvimento.
+ *
+ * Com VITE_DISABLE_CLOUD_SYNC=true em .env.local, nada sai desta máquina para
+ * o Firestore de produção: nem os listeners, nem as gravações avulsas que as
+ * ações da store disparam por conta própria (syncTaskToCloud e companhia são
+ * chamadas direto de dentro da store, fora do initFirestoreSync).
+ *
+ * Sem essa trava, rodar `npm run dev` e clicar em "Aprovar" altera a base real
+ * dos clientes.
+ */
+export const isCloudSyncDisabled = (): boolean =>
+  import.meta.env?.VITE_DISABLE_CLOUD_SYNC === 'true';
+
+/**
  * Recursively cleans objects/arrays so Firestore never throws 'Unsupported field value: undefined'
  */
 export function sanitizeForFirestore(val: any): any {
@@ -41,6 +55,7 @@ export function sanitizeForFirestore(val: any): any {
  * - Provides initial seed of default data if cloud database is empty
  */
 export function initFirestoreSync() {
+  if (isCloudSyncDisabled()) return;
   if (isListening) return;
   isListening = true;
 
@@ -231,6 +246,7 @@ export function initFirestoreSync() {
  * Saves Admin Table View Configuration (Visible columns, order, and column widths) to Firestore
  */
 export async function syncTableViewConfigToCloud(config: TableViewConfig) {
+  if (isCloudSyncDisabled()) return;
   try {
     const configRef = doc(db, COLLECTIONS.APP_CONFIG, 'tableViewConfig');
     const cleanData = sanitizeForFirestore({
@@ -251,6 +267,7 @@ export async function syncTableViewConfigToCloud(config: TableViewConfig) {
  * Saves Admin System Prompts directly to Firestore
  */
 export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {
+  if (isCloudSyncDisabled()) return;
   if (!prompts) return;
   try {
     const promptsRef = doc(db, COLLECTIONS.APP_CONFIG, 'adminPrompts');
@@ -268,6 +285,7 @@ export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {
  * Saves Agency Configuration (Categories, Plans, Statuses) directly to Firestore
  */
 export async function syncAgencyConfigToCloud(config: Record<string, any>) {
+  if (isCloudSyncDisabled()) return;
   try {
     const configRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
     const cleanData = sanitizeForFirestore({
@@ -284,6 +302,7 @@ export async function syncAgencyConfigToCloud(config: Record<string, any>) {
  * Saves Prompts and Prompt Folders directly to Firestore
  */
 export async function syncPromptsConfigToCloud(promptFolders: any[], prompts: any[]) {
+  if (isCloudSyncDisabled()) return;
   try {
     const configRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
     const cleanData = sanitizeForFirestore({
@@ -301,6 +320,7 @@ export async function syncPromptsConfigToCloud(promptFolders: any[], prompts: an
  * Saves or updates a single user directly in Firestore
  */
 export async function syncUserToCloud(user: User) {
+  if (isCloudSyncDisabled()) return;
   if (!user.id) return;
   try {
     const userRef = doc(db, COLLECTIONS.USERS, user.id);
@@ -318,6 +338,7 @@ export async function syncUserToCloud(user: User) {
  * Deletes a single user from Firestore
  */
 export async function deleteUserFromCloud(userId: string) {
+  if (isCloudSyncDisabled()) return;
   if (!userId) return;
   try {
     const userRef = doc(db, COLLECTIONS.USERS, userId);
@@ -331,6 +352,7 @@ export async function deleteUserFromCloud(userId: string) {
  * Saves or updates a single task directly in Firestore
  */
 export async function syncTaskToCloud(task: Task) {
+  if (isCloudSyncDisabled()) return;
   if (!task.id) return;
   try {
     const taskRef = doc(db, COLLECTIONS.TASKS, task.id);
@@ -389,6 +411,7 @@ export async function syncTaskToCloud(task: Task) {
  * Updates live editing status for a task in Firestore in real time
  */
 export async function syncTaskLiveEditingToCloud(taskId: string, editingBy: TaskLiveEditing | null) {
+  if (isCloudSyncDisabled()) return;
   if (!taskId) return;
   try {
     const taskRef = doc(db, COLLECTIONS.TASKS, taskId);
@@ -408,6 +431,7 @@ export async function syncTaskLiveEditingToCloud(taskId: string, editingBy: Task
  * Deletes a single task from Firestore and its file chunks
  */
 export async function deleteTaskFromCloud(taskId: string) {
+  if (isCloudSyncDisabled()) return;
   if (!taskId) return;
   try {
     const task = useAppStore.getState().tasks.find((t) => t.id === taskId);
@@ -427,6 +451,7 @@ export async function deleteTaskFromCloud(taskId: string) {
  * Saves or updates a single client directly in Firestore
  */
 export async function syncClientToCloud(client: Client) {
+  if (isCloudSyncDisabled()) return;
   if (!client.id) return;
   try {
     const clientRef = doc(db, COLLECTIONS.CLIENTS, client.id);
@@ -444,6 +469,7 @@ export async function syncClientToCloud(client: Client) {
  * Deletes a single client from Firestore
  */
 export async function deleteClientFromCloud(clientId: string) {
+  if (isCloudSyncDisabled()) return;
   if (!clientId) return;
   try {
     const clientRef = doc(db, COLLECTIONS.CLIENTS, clientId);
@@ -457,6 +483,7 @@ export async function deleteClientFromCloud(clientId: string) {
  * Pushes all current local store data to Firestore as a cloud backup and sync point
  */
 export async function pushFullStoreToCloud(): Promise<boolean> {
+  if (isCloudSyncDisabled()) return false;
   isSyncingToCloud = true;
   const state = useAppStore.getState();
   try {
@@ -524,6 +551,7 @@ export async function pushFullStoreToCloud(): Promise<boolean> {
 }
 
 async function seedInitialUsersToCloud() {
+  if (isCloudSyncDisabled()) return;
   const state = useAppStore.getState();
   if (!state.users || state.users.length === 0) return;
   isSyncingToCloud = true;
@@ -540,6 +568,7 @@ async function seedInitialUsersToCloud() {
 }
 
 async function seedInitialClientsToCloud() {
+  if (isCloudSyncDisabled()) return;
   const state = useAppStore.getState();
   if (!state.clients || state.clients.length === 0) return;
   isSyncingToCloud = true;
@@ -556,6 +585,7 @@ async function seedInitialClientsToCloud() {
 }
 
 async function seedInitialTasksToCloud() {
+  if (isCloudSyncDisabled()) return;
   const state = useAppStore.getState();
   if (!state.tasks || state.tasks.length === 0) return;
   isSyncingToCloud = true;

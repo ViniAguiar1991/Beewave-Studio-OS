@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore, useCurrentUser } from './store';
-import { initFirestoreSync } from './services/firestoreSync';
-import { SidebarRail } from './components/SidebarRail';
+import { initFirestoreSync, isCloudSyncDisabled } from './services/firestoreSync';
+import { AppSidebar } from './components/AppSidebar';
 import { DashboardHome } from './components/DashboardHome';
 import { TasksListView } from './components/TasksListView';
 import { ClientsListView } from './components/ClientsListView';
 import { ClientProfileView } from './components/ClientProfileView';
-import { CalendarView } from './components/CalendarView';
 import { PromptsView } from './components/PromptsView';
 import { AdminSettingsView } from './components/AdminSettingsView';
 import { CollaboratorsView } from './components/CollaboratorsView';
@@ -25,11 +24,12 @@ export function App() {
   const logout = useAppStore((s) => s.logout);
   const users = useAppStore((s) => s.users);
   const addTask = useAppStore((s) => s.addTask);
+  const allTasks = useAppStore((s) => s.tasks);
 
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
       const savedTab = localStorage.getItem('beewave_active_tab');
-      if (savedTab && ['inicio', 'tarefas', 'campanhas', 'clientes', 'colaboradores', 'calendario', 'prompts', 'lixeira', 'admin', 'portal'].includes(savedTab)) {
+      if (savedTab && ['inicio', 'tarefas', 'campanhas', 'clientes', 'colaboradores', 'prompts', 'lixeira', 'admin', 'portal'].includes(savedTab)) {
         return savedTab;
       }
     } catch {}
@@ -73,8 +73,16 @@ export function App() {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [inviteEmailParam, setInviteEmailParam] = useState<string | null>(null);
 
-  // Initialize Firestore real-time synchronization with cloud
+  // Sincronização em tempo real com o Firestore.
+  // A trava mora no próprio serviço (isCloudSyncDisabled), para valer também
+  // para as gravações que a store dispara direto, fora deste init.
   useEffect(() => {
+    if (isCloudSyncDisabled()) {
+      console.info(
+        '[BeeWave] Sync com a nuvem desativada (VITE_DISABLE_CLOUD_SYNC=true). Rodando só com dados locais.'
+      );
+      return;
+    }
     initFirestoreSync();
   }, []);
 
@@ -298,77 +306,40 @@ export function App() {
     );
   }
 
+  /**
+   * Quantas pautas dependem da equipe agora: ajuste pedido pelo cliente,
+   * sugestão de pauta ainda não avaliada, ou data de publicação já vencida.
+   * O mesmo número que a Home destaca em "Precisa de você".
+   */
+  const teamQueueCount = React.useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return allTasks.filter((t) => {
+      if (t.status === 'alterar') return true;
+      if (t.clientRequest && t.status === 'nao_iniciado') return true;
+      const day = (t.postDate || t.date || '').split('T')[0];
+      const concluida = t.status === 'aprovado' || t.status === 'postado';
+      return !!day && day < today && !concluida;
+    }).length;
+  }, [allTasks]);
+
   return (
-    <div className="min-h-screen flex text-slate-800 dark:text-slate-100 relative selection:bg-slate-900 selection:text-white dark:selection:bg-white dark:selection:text-slate-900">
-      {/* Code-built Ambient Soft Light Background */}
-      <div className="bg-mesh-ribbons pointer-events-none" aria-hidden="true">
-        <svg className="w-full h-full object-cover" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* Subtle luminous ambient gradient glow */}
-          <circle cx="1200" cy="150" r="350" fill="url(#paint_circle_1)" opacity="0.25" filter="blur(80px)" />
-          <circle cx="200" cy="750" r="300" fill="url(#paint_circle_2)" opacity="0.15" filter="blur(80px)" />
-
-          <defs>
-            <radialGradient id="paint_circle_1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1200 150) rotate(90) scale(350)">
-              <stop stopColor="#e2e8f0" stopOpacity="0.6"/>
-              <stop offset="1" stopColor="#ffffff" stopOpacity="0"/>
-            </radialGradient>
-            <radialGradient id="paint_circle_2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 750) rotate(90) scale(300)">
-              <stop stopColor="#f1f5f9" stopOpacity="0.6"/>
-              <stop offset="1" stopColor="#ffffff" stopOpacity="0"/>
-            </radialGradient>
-          </defs>
-        </svg>
-      </div>
-
-      {/* Background fine noise overlay */}
-      <div className="fixed inset-0 pointer-events-none bg-noise z-0 opacity-80" aria-hidden="true" />
-
-      {/* Left Sidebar Rail (Fixed 72px pill with circular hovers) */}
-      <SidebarRail
+    <div
+      data-surface="app"
+      className="min-h-screen text-slate-800 dark:text-slate-100 selection:bg-slate-900 selection:text-white dark:selection:bg-white dark:selection:text-slate-900"
+    >
+      <AppSidebar
         currentTab={currentTab}
         onSelectTab={(tab) => {
           setSelectedClientId(null);
           setCurrentTab(tab);
         }}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
+        actionCount={teamQueueCount}
       />
 
-      {/* Main App Content Area */}
-      <div className="flex-1 md:pl-[96px] flex flex-col min-w-0 relative z-10">
-        {/* Mobile Top Header with App branding, User badge and Prominent Logout Button */}
-        <header className="md:hidden sticky top-0 z-30 flex items-center justify-between px-4 py-3 bg-white/90 dark:bg-[#121620]/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 shadow-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="grid h-8 w-8 place-items-center rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs shadow-xs">
-              BW
-            </div>
-            <div>
-              <p className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
-                BeeWave Studio
-              </p>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                {currentUser?.role === 'admin' ? 'Painel Administrador' : 'Colaborador'}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 max-w-[100px] truncate hidden xs:inline">
-              {currentUser?.name?.split(' ')[0]}
-            </span>
-            <button
-              id="btn-mobile-top-logout"
-              onClick={() => logout()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/60 dark:hover:bg-rose-900/60 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900/80 text-xs font-bold transition-all active:scale-95 cursor-pointer shadow-2xs"
-              title="Encerrar sessão"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              <span>Sair</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Dynamic Route Content */}
-        <main className="flex-1 p-4 sm:p-6 md:p-10 pt-4 md:pt-10 pb-28 md:pb-12 min-w-0">
+      <div className="md:pl-[232px] flex flex-col min-w-0">
+        <main className="flex-1 px-5 sm:px-8 lg:px-12 py-8 lg:py-12 min-w-0">
+          {/* Conteúdo da rota ativa */}
           {currentTab === 'inicio' && (
             <DashboardHome
               onSelectTask={(tId) => setActiveWorkflowTaskId(tId)}
@@ -387,7 +358,7 @@ export function App() {
           {currentTab === 'tarefas' && (
             <TasksListView
               onSelectTask={(tId) => setActiveWorkflowTaskId(tId)}
-              onNewTask={() => handleOpenNewTask()}
+              onNewTask={(prefill) => handleOpenNewTask(prefill)}
               onSelectClient={(cId) => {
                 setSelectedClientId(cId);
                 setCurrentTab('clientes');
@@ -433,13 +404,6 @@ export function App() {
 
           {currentTab === 'colaboradores' && (
             <CollaboratorsView />
-          )}
-
-          {currentTab === 'calendario' && (
-            <CalendarView
-              onSelectTask={(tId) => setActiveWorkflowTaskId(tId)}
-              onNewTaskOnDate={(dateStr) => handleOpenNewTask({ postDate: dateStr })}
-            />
           )}
 
           {currentTab === 'prompts' && <PromptsView />}

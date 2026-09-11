@@ -1,591 +1,237 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Client, ClientStrategyDocument, StrategyChapter } from '../../types';
-import { EMELY_STRATEGY_DOCUMENT } from '../../data/emelyStrategy';
 import { StrategyImportModal } from './StrategyImportModal';
-import {
-  Sparkles,
-  FileUp,
-  Printer,
-  ChevronRight,
-  Target,
-  Users,
-  Compass,
-  FileText,
-  Radio,
-  BarChart2,
-  Calendar,
-  Layers,
-  HelpCircle,
-  AlertTriangle,
-  ArrowRight,
-  ExternalLink,
-} from 'lucide-react';
+import { Button, EmptyState } from '../ui';
+import { FileUp, Printer, AlertTriangle } from 'lucide-react';
 
 interface ClientStrategyTabProps {
   currentClient: Client;
   onUpdateStrategy?: (strategy: ClientStrategyDocument) => void;
+  /**
+   * Importar e reinterpretar o documento é ferramenta da agência.
+   * No portal do cliente esses controles não existem: o cliente lê a estratégia
+   * e pede alteração — não reescreve o próprio plano.
+   */
+  isAgencyView?: boolean;
+  /** Abre o pedido de alteração. Só no portal do cliente. */
+  onRequestChange?: () => void;
 }
 
+/**
+ * Estratégia — um documento só, do começo ao fim.
+ *
+ * Antes cada capítulo era uma aba: para ler o plano inteiro o cliente tinha de
+ * clicar dez vezes e nunca via o conjunto. Agora o plano é texto corrido e o
+ * índice lateral serve para pular, não para trocar de tela — que é como se lê
+ * um documento.
+ *
+ * O índice acompanha a rolagem com altura limitada e scroll próprio, então não
+ * passa por cima do texto por mais longo que o capítulo seja.
+ */
 export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
   currentClient,
   onUpdateStrategy,
+  isAgencyView = false,
+  onRequestChange,
 }) => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
-  // Strategy document priority: client custom strategy -> Emely default strategy
-  const strategy: ClientStrategyDocument =
-    currentClient.strategyDocument || EMELY_STRATEGY_DOCUMENT;
+  /**
+   * A estratégia exibida é SEMPRE a do cliente atual.
+   *
+   * Não existe documento padrão de reserva. Havia um: quando o cliente não
+   * tinha plano próprio, o portal caía no documento da Emely Moda Festa — e
+   * qualquer outro cliente logado via o posicionamento, a SWOT e o plano de
+   * 90 dias de uma marca concorrente. Se não há documento, não há o que ler.
+   */
+  const strategy: ClientStrategyDocument | undefined = currentClient.strategyDocument;
+  const chapters: StrategyChapter[] = useMemo(() => strategy?.chapters || [], [strategy]);
 
-  const [activeChapterId, setActiveChapterId] = useState<string>(
-    strategy.chapters[0]?.id || 'chap-01'
-  );
+  const [activeId, setActiveId] = useState<string>('');
 
-  const activeChapter: StrategyChapter | undefined =
-    strategy.chapters.find((ch) => ch.id === activeChapterId) || strategy.chapters[0];
+  /**
+   * Marca no índice o capítulo que está sendo lido: o último cujo título já
+   * passou pela linha de leitura (um quarto abaixo do topo da janela).
+   *
+   * IntersectionObserver não serve bem aqui — capítulos longos continuam
+   * cruzando a faixa de observação depois que o próximo já apareceu na tela, e
+   * o índice fica marcando o capítulo anterior.
+   */
+  useEffect(() => {
+    if (chapters.length === 0) return;
+
+    let frame = 0;
+
+    const update = () => {
+      frame = 0;
+      const readingLine = window.innerHeight * 0.25;
+      let current = chapters[0]?.id || '';
+
+      for (const ch of chapters) {
+        const el = document.getElementById(ch.id);
+        if (!el) continue;
+        if (el.getBoundingClientRect().top <= readingLine) current = ch.id;
+        else break;
+      }
+
+      setActiveId(current);
+    };
+
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, [chapters]);
 
   const handleSaveStrategy = (newStrat: ClientStrategyDocument) => {
-    if (onUpdateStrategy) {
-      onUpdateStrategy(newStrat);
-    }
-    if (newStrat.chapters.length > 0) {
-      setActiveChapterId(newStrat.chapters[0].id);
-    }
+    onUpdateStrategy?.(newStrat);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const goToChapter = (id: string) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveId(id);
   };
 
-  const chapterIcons: Record<string, any> = {
-    '01': Target,
-    '02': Users,
-    '03': Compass,
-    '04': FileText,
-    '05': Radio,
-    '06': Layers,
-    '07': BarChart2,
-    '08': Calendar,
-    '09': Layers,
-    '10': HelpCircle,
-  };
+  // Sem documento próprio, o portal diz isso com todas as letras — e nunca
+  // mostra a estratégia de outra marca no lugar.
+  if (!strategy || chapters.length === 0) {
+    return (
+      <div className="portal-enter">
+        <EmptyState
+          title={`A estratégia de ${currentClient.company} ainda não foi publicada aqui`}
+          hint={
+            isAgencyView
+              ? 'Importe o documento do plano para que o cliente possa lê-lo por este portal.'
+              : 'Assim que a Beewave publicar o plano de marca e conteúdo, ele aparece nesta aba, capítulo por capítulo.'
+          }
+          action={
+            isAgencyView ? (
+              <Button variant="primary" size="sm" icon={FileUp} onClick={() => setIsImportModalOpen(true)}>
+                Importar documento
+              </Button>
+            ) : undefined
+          }
+        />
+        <StrategyImportModal
+          isOpen={isImportModalOpen}
+          onClose={() => setIsImportModalOpen(false)}
+          clientName={currentClient.company}
+          onSaveStrategy={handleSaveStrategy}
+        />
+      </div>
+    );
+  }
 
   return (
-    <div id="notion-style-strategy-view" className="w-full space-y-10 animate-fade-in">
-      {/* 1. Notion-Style Document Header (Free, unbounded by heavy nested containers) */}
-      <div className="space-y-6 pt-2">
-        {/* Cycle Meta Tag & Action Buttons */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200/60 dark:border-slate-800">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold tracking-widest text-emerald-700 dark:text-emerald-400 uppercase">
-              {strategy.cycleMeta || 'PLANO DE MARCA, CONTEÚDO E AQUISIÇÃO • SETEMBRO 2026'}
-            </span>
-          </div>
+    <div className="portal-enter">
+      {/* Capa do documento */}
+      <header className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-slate-200 dark:border-slate-800">
+          <span className="t-label text-slate-500">
+            {strategy.cycleMeta || 'Plano de marca, conteúdo e aquisição'}
+          </span>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => setIsImportModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/80 transition-colors cursor-pointer shadow-2xs"
-            >
-              <FileUp className="h-3.5 w-3.5" />
-              <span>Importar / Interpretar Documento</span>
-            </button>
-
-            <button
-              onClick={handlePrint}
-              title="Imprimir plano de estratégia"
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-            >
-              <Printer className="h-3.5 w-3.5 text-slate-400" />
-              <span className="hidden sm:inline">Exportar / Imprimir</span>
-            </button>
+          <div className="flex items-center gap-3 flex-wrap">
+            {isAgencyView && (
+              <Button variant="secondary" size="sm" icon={FileUp} onClick={() => setIsImportModalOpen(true)}>
+                Importar documento
+              </Button>
+            )}
+            <Button variant="ghost" size="sm" icon={Printer} onClick={() => window.print()}>
+              <span className="hidden sm:inline">Imprimir</span>
+            </Button>
+            {!isAgencyView && onRequestChange && (
+              <Button variant="secondary" size="sm" onClick={onRequestChange}>
+                Pedir alteração
+              </Button>
+            )}
           </div>
         </div>
 
-        {/* Brand Main Title & Subtitle */}
-        <div className="space-y-2">
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-white">
+        <div className="space-y-3">
+          <h1 className="font-display text-[34px] sm:text-[44px] font-semibold tracking-[-0.025em] text-slate-950 dark:text-white leading-[1.05]">
             {strategy.title || currentClient.company}
           </h1>
-          <p className="text-base sm:text-lg text-slate-600 dark:text-slate-300 font-normal max-w-3xl leading-relaxed">
-            {strategy.subtitle || 'Estratégia para ampliar a presença e transformar procura em vendas.'}
-          </p>
-        </div>
-
-        {/* 3 Key Decision Highlights (Screenshot 1 Layout: Pure text, generous whitespace, emerald uppercase tags) */}
-        {strategy.keyDecisions && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 pb-4 border-y border-slate-200/80 dark:border-slate-800/80">
-            <div className="space-y-1.5">
-              <span className="text-[11px] font-black tracking-wider text-emerald-700 dark:text-emerald-400 uppercase">
-                DECISÃO CENTRAL
-              </span>
-              <p className="text-sm text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-                {strategy.keyDecisions.centralDecision}
-              </p>
-            </div>
-
-            <div className="space-y-1.5 md:border-l md:border-slate-200/80 dark:md:border-slate-800/80 md:pl-6">
-              <span className="text-[11px] font-black tracking-wider text-emerald-700 dark:text-emerald-400 uppercase">
-                POSICIONAMENTO
-              </span>
-              <p className="text-sm text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-                {strategy.keyDecisions.positioning}
-              </p>
-            </div>
-
-            <div className="space-y-1.5 md:border-l md:border-slate-200/80 dark:md:border-slate-800/80 md:pl-6">
-              <span className="text-[11px] font-black tracking-wider text-emerald-700 dark:text-emerald-400 uppercase">
-                PRIORIDADE DO CICLO
-              </span>
-              <p className="text-sm text-slate-800 dark:text-slate-200 font-medium leading-relaxed">
-                {strategy.keyDecisions.cyclePriority}
-              </p>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 2. Notion-Style Two-Column Strategy Canvas (No excessive card containers) */}
-      <div className="flex flex-col lg:flex-row items-start gap-8 lg:gap-12 pt-2">
-        {/* Left Sticky Sidebar Index (Chapters 01 to 10) */}
-        <div className="w-full lg:w-72 shrink-0 space-y-2 sticky top-6">
-          <div className="px-2 pb-2">
-            <p className="text-[10px] font-bold tracking-wider text-slate-400 dark:text-slate-500 uppercase">
-              CAPÍTULOS DO PLANO
+          {strategy.subtitle && (
+            <p className="text-[18px] sm:text-[20px] text-slate-600 dark:text-slate-300 max-w-2xl leading-relaxed">
+              {strategy.subtitle}
             </p>
-          </div>
-
-          <nav className="space-y-0.5">
-            {strategy.chapters.map((chap) => {
-              const isActive = chap.id === activeChapterId;
-              const Icon = chapterIcons[chap.number] || Target;
-              return (
-                <button
-                  key={chap.id}
-                  onClick={() => setActiveChapterId(chap.id)}
-                  className={`w-full text-left flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer group ${
-                    isActive
-                      ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-sm'
-                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className={`text-[11px] font-bold shrink-0 ${
-                        isActive ? 'text-emerald-400 dark:text-emerald-600' : 'text-slate-400 group-hover:text-slate-600'
-                      }`}
-                    >
-                      {chap.number}
-                    </span>
-                    <span className="truncate">{chap.title}</span>
-                  </div>
-                  <ChevronRight
-                    className={`h-3.5 w-3.5 shrink-0 transition-transform ${
-                      isActive ? 'opacity-100 translate-x-0.5' : 'opacity-0 group-hover:opacity-50'
-                    }`}
-                  />
-                </button>
-              );
-            })}
-          </nav>
-
-          {/* Quick Action Hint */}
-          <div className="pt-4 px-3">
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed">
-              Dica: Você pode enviar novos documentos e notas para reinterpretar os capítulos a qualquer momento.
-            </p>
-          </div>
-        </div>
-
-        {/* Right Notion Main Document Body */}
-        <div className="flex-1 min-w-0 space-y-10 pb-16">
-          {activeChapter && (
-            <div className="space-y-8 animate-fade-in">
-              {/* Chapter Header */}
-              <div className="space-y-2 border-b border-slate-100 dark:border-slate-800/80 pb-6">
-                <span className="text-xs font-extrabold tracking-widest text-emerald-600 dark:text-emerald-400 uppercase">
-                  {activeChapter.tag}
-                </span>
-                <h2 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
-                  {activeChapter.title}
-                </h2>
-                {activeChapter.subtitle && (
-                  <p className="text-base text-slate-600 dark:text-slate-300 font-normal">
-                    {activeChapter.subtitle}
-                  </p>
-                )}
-              </div>
-
-              {/* Callout Quote with Green Left Border (As in Screenshot 1) */}
-              {activeChapter.callout && (
-                <div className="border-l-4 border-emerald-500 pl-5 py-3 space-y-1 my-6 bg-slate-50/50 dark:bg-slate-800/30 rounded-r-xl">
-                  <p className="text-base sm:text-lg font-serif italic text-slate-800 dark:text-slate-200 leading-relaxed">
-                    "{activeChapter.callout.quote}"
-                  </p>
-                  {activeChapter.callout.caption && (
-                    <span className="text-[10px] font-bold tracking-widest text-emerald-700 dark:text-emerald-400 uppercase block pt-1">
-                      {activeChapter.callout.caption}
-                    </span>
-                  )}
-                </div>
-              )}
-
-              {/* Portfolio Items List (As in Screenshot 2: Clean list with emerald tags) */}
-              {activeChapter.portfolioItems && activeChapter.portfolioItems.length > 0 && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    PORTFÓLIO DE PRODUTOS & PAPEL NA RECEITA
-                  </h3>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {activeChapter.portfolioItems.map((item, idx) => (
-                      <div key={idx} className="py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3 group">
-                        <div className="flex items-start gap-3.5">
-                          <span className="text-2xl select-none">{item.icon || '✨'}</span>
-                          <div className="space-y-1">
-                            <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                              {item.title}
-                            </h4>
-                            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-                              {item.description}
-                            </p>
-                          </div>
-                        </div>
-
-                        {item.tag && (
-                          <div className="sm:text-right shrink-0">
-                            <span className="inline-block px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200/80 dark:border-emerald-800/60">
-                              {item.tag}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Occasions Segmentation (Screenshot 2) */}
-              {activeChapter.occasions && activeChapter.occasions.length > 0 && (
-                <div className="space-y-4 pt-6">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    SEGMENTAÇÃO POR OCASIÃO
-                  </h3>
-                  <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
-                    {activeChapter.occasions.map((occ, idx) => (
-                      <div key={idx} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white dark:bg-slate-900">
-                        <div>
-                          <p className="text-xs font-bold text-slate-900 dark:text-white">
-                            {occ.role}
-                          </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            {occ.description}
-                          </p>
-                        </div>
-                        {occ.priority && (
-                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 self-start sm:self-auto">
-                            Prioridade: {occ.priority}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* 7-Step Journey (Screenshot 3 Layout) */}
-              {activeChapter.journeySteps && activeChapter.journeySteps.length > 0 && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    JORNADA DA CLIENTE (DA OCASIÃO AO PÓS-EVENTO)
-                  </h3>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800 border-y border-slate-100 dark:border-slate-800">
-                    {activeChapter.journeySteps.map((j) => (
-                      <div key={j.step} className="py-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                        <div className="flex items-center gap-3">
-                          <span className="grid h-6 w-6 place-items-center rounded bg-slate-100 dark:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                            {j.step}
-                          </span>
-                          <span className="text-xs font-bold text-slate-900 dark:text-white">
-                            {j.name}
-                          </span>
-                          <span className="text-xs italic text-slate-500 dark:text-slate-400 hidden sm:inline">
-                            {j.quote}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-600 dark:text-slate-400 md:text-right">
-                          <span className="text-[11px] text-slate-400 block sm:inline sm:mr-1">Pontos de contato:</span>
-                          <span className="font-medium text-slate-800 dark:text-slate-200">{j.touchpoints}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Commercial Process: Do WhatsApp à Visita (Screenshot 3) */}
-              {activeChapter.commercialSteps && activeChapter.commercialSteps.length > 0 && (
-                <div className="space-y-4 pt-4">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    DO WHATSAPP À VISITA (PROCESSO COMERCIAL)
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {activeChapter.commercialSteps.map((step) => (
-                      <div key={step.step} className="p-4 rounded-xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900/60 space-y-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="grid h-5 w-5 place-items-center rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 text-[10px] font-extrabold">
-                            {step.step}
-                          </span>
-                          <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                            {step.title}
-                          </h4>
-                        </div>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                          {step.description}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Critical Bottleneck Alert (Screenshot 3 Layout: Subtle warm background, refined typography) */}
-              {activeChapter.bottleneck && (
-                <div className="p-5 rounded-2xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/80 dark:border-amber-900/50 space-y-2">
-                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-400">
-                    <AlertTriangle className="h-4 w-4 shrink-0" />
-                    <h4 className="text-xs font-bold uppercase tracking-wider">
-                      {activeChapter.bottleneck.title}
-                    </h4>
-                  </div>
-                  {activeChapter.bottleneck.subtitle && (
-                    <p className="text-xs font-bold text-slate-900 dark:text-white">
-                      {activeChapter.bottleneck.subtitle}
-                    </p>
-                  )}
-                  <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
-                    {activeChapter.bottleneck.description}
-                  </p>
-                </div>
-              )}
-
-              {/* SWOT Matrix (Chapter 06) */}
-              {activeChapter.swot && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    ANÁLISE SWOT ESTRATÉGICA
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div className="p-4 rounded-xl border border-emerald-200/80 dark:border-emerald-800/80 bg-emerald-50/30 dark:bg-emerald-950/10 space-y-2">
-                      <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider">
-                        Forças (Strengths)
-                      </h4>
-                      <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                        {activeChapter.swot.strengths.map((s, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-emerald-600 font-bold">•</span>
-                            <span>{s}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl border border-rose-200/80 dark:border-rose-800/80 bg-rose-50/30 dark:bg-rose-950/10 space-y-2">
-                      <h4 className="text-xs font-bold text-rose-800 dark:text-rose-400 uppercase tracking-wider">
-                        Fraquezas (Weaknesses)
-                      </h4>
-                      <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                        {activeChapter.swot.weaknesses.map((w, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-rose-500 font-bold">•</span>
-                            <span>{w}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl border border-sky-200/80 dark:border-sky-800/80 bg-sky-50/30 dark:bg-sky-950/10 space-y-2">
-                      <h4 className="text-xs font-bold text-sky-800 dark:text-sky-400 uppercase tracking-wider">
-                        Oportunidades (Opportunities)
-                      </h4>
-                      <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                        {activeChapter.swot.opportunities.map((o, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-sky-600 font-bold">•</span>
-                            <span>{o}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="p-4 rounded-xl border border-amber-200/80 dark:border-amber-800/80 bg-amber-50/30 dark:bg-amber-950/10 space-y-2">
-                      <h4 className="text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider">
-                        Ameaças (Threats)
-                      </h4>
-                      <ul className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300">
-                        {activeChapter.swot.threats.map((t, idx) => (
-                          <li key={idx} className="flex items-start gap-2">
-                            <span className="text-amber-600 font-bold">•</span>
-                            <span>{t}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* KPIs & Metrics Table (Chapter 07) */}
-              {activeChapter.kpis && activeChapter.kpis.length > 0 && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    METAS & INDICADORES DE PERFORMANCE
-                  </h3>
-                  <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
-                    {activeChapter.kpis.map((kpi, idx) => (
-                      <div key={idx} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white dark:bg-slate-900">
-                        <div className="space-y-1">
-                          <p className="text-xs font-bold text-slate-900 dark:text-white">
-                            {kpi.metric}
-                          </p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                            {kpi.why}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[11px] text-slate-400">Frequência: {kpi.frequency}</span>
-                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300">
-                            {kpi.target}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Quarter Plan: 90 Days (Chapter 08) */}
-              {activeChapter.quarterPlan && activeChapter.quarterPlan.length > 0 && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    CRONOGRAMA DE 90 DIAS
-                  </h3>
-                  <div className="space-y-4">
-                    {activeChapter.quarterPlan.map((plan, idx) => (
-                      <div key={idx} className="p-5 rounded-2xl border border-slate-200/80 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">
-                            {plan.month}
-                          </span>
-                          <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                            Foco: {plan.focus}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-900 dark:text-white">
-                          {plan.title}
-                        </h4>
-                        <ul className="space-y-2 pt-1 border-t border-slate-100 dark:border-slate-800">
-                          {plan.actions.map((act, aIdx) => (
-                            <li key={aIdx} className="text-xs text-slate-700 dark:text-slate-300 flex items-start gap-2">
-                              <span className="text-emerald-600 font-bold">•</span>
-                              <span>{act}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Responsibilities Matrix (Chapter 09) */}
-              {activeChapter.responsibilities && activeChapter.responsibilities.length > 0 && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    MATRIZ DE RESPONSABILIDADES
-                  </h3>
-                  <div className="border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800">
-                    {activeChapter.responsibilities.map((resp, idx) => (
-                      <div key={idx} className="p-4 grid grid-cols-1 md:grid-cols-3 gap-3 bg-white dark:bg-slate-900 text-xs">
-                        <div className="font-bold text-slate-900 dark:text-white">
-                          {resp.category}
-                        </div>
-                        <div className="space-y-1 text-slate-700 dark:text-slate-300">
-                          <span className="text-[10px] font-bold uppercase text-emerald-600 dark:text-emerald-400 block">Agência BeeWave</span>
-                          {resp.agency.map((a, i) => <p key={i}>{a}</p>)}
-                        </div>
-                        <div className="space-y-1 text-slate-700 dark:text-slate-300">
-                          <span className="text-[10px] font-bold uppercase text-slate-500 block">Cliente ({currentClient.company})</span>
-                          {resp.client.map((c, i) => <p key={i}>{c}</p>)}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Glossary (Chapter 10) */}
-              {activeChapter.glossary && activeChapter.glossary.length > 0 && (
-                <div className="space-y-4 pt-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-                    GLOSSÁRIO DE TERMOS & CONCEITOS
-                  </h3>
-                  <div className="divide-y divide-slate-100 dark:divide-slate-800 border-y border-slate-100 dark:border-slate-800">
-                    {activeChapter.glossary.map((item, idx) => (
-                      <div key={idx} className="py-3.5 space-y-1">
-                        <h4 className="text-xs font-bold text-slate-900 dark:text-white">
-                          {item.term}
-                        </h4>
-                        <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                          {item.definition}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Free Markdown Content Rendering if present */}
-              {activeChapter.contentMarkdown && (
-                <div className="prose dark:prose-invert max-w-none text-xs sm:text-sm text-slate-700 dark:text-slate-300 leading-relaxed space-y-4 whitespace-pre-line pt-2">
-                  {activeChapter.contentMarkdown}
-                </div>
-              )}
-
-              {/* Bottom Pagination to Next Chapter */}
-              <div className="pt-10 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                {(() => {
-                  const currentIndex = strategy.chapters.findIndex((c) => c.id === activeChapterId);
-                  const nextChapter = strategy.chapters[currentIndex + 1];
-                  const prevChapter = strategy.chapters[currentIndex - 1];
-
-                  return (
-                    <>
-                      {prevChapter ? (
-                        <button
-                          onClick={() => setActiveChapterId(prevChapter.id)}
-                          className="flex items-center gap-2 text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white cursor-pointer"
-                        >
-                          <span>← {prevChapter.number} {prevChapter.title}</span>
-                        </button>
-                      ) : <div />}
-
-                      {nextChapter && (
-                        <button
-                          onClick={() => setActiveChapterId(nextChapter.id)}
-                          className="flex items-center gap-2 text-xs font-bold text-slate-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer ml-auto"
-                        >
-                          <span>Próximo: {nextChapter.number} {nextChapter.title} →</span>
-                        </button>
-                      )}
-                    </>
-                  );
-                })()}
-              </div>
-            </div>
           )}
         </div>
+
+        {strategy.keyDecisions && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 pt-5 pb-6 border-y border-slate-200 dark:border-slate-800">
+            <KeyDecision label="Decisão central" text={strategy.keyDecisions.centralDecision} />
+            <KeyDecision label="Posicionamento" text={strategy.keyDecisions.positioning} bordered />
+            <KeyDecision label="Prioridade do ciclo" text={strategy.keyDecisions.cyclePriority} bordered />
+          </div>
+        )}
+      </header>
+
+      {/* Índice + documento corrido.
+          Sem `items-start`: o <nav> precisa esticar até o fim do documento,
+          senão ele tem só a altura do próprio conteúdo e o sticky não tem
+          espaço para grudar — o índice simplesmente sobe junto com a página. */}
+      <div className="flex gap-10 xl:gap-16 pt-12">
+        <nav aria-label="Capítulos do plano" className="hidden lg:block w-60 xl:w-64 shrink-0">
+          {/* Altura limitada e rolagem própria: o índice nunca cobre o texto. */}
+          <div className="sticky top-6 max-h-[calc(100vh-4rem)] overflow-y-auto no-scrollbar pb-6">
+            <p className="t-label text-slate-400 dark:text-slate-500 px-3 pb-3">Neste plano</p>
+            <ul className="space-y-0.5">
+              {chapters.map((ch) => {
+                const isActive = activeId === ch.id;
+                return (
+                  <li key={ch.id}>
+                    <button
+                      onClick={() => goToChapter(ch.id)}
+                      aria-current={isActive ? 'true' : undefined}
+                      className={`w-full text-left flex gap-2.5 px-3 py-2 rounded-lg t-ui transition-colors duration-150 cursor-pointer ${
+                        isActive
+                          ? 'bg-slate-100 dark:bg-slate-800 text-slate-950 dark:text-white font-semibold'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <span
+                        className={`shrink-0 tabular-nums ${
+                          isActive
+                            ? 'text-amber-600 dark:text-amber-500'
+                            : 'text-slate-400 dark:text-slate-600'
+                        }`}
+                      >
+                        {ch.number}
+                      </span>
+                      <span className="min-w-0">{ch.title}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </nav>
+
+        <article className="min-w-0 flex-1 max-w-3xl">
+          {chapters.map((ch, i) => (
+            <ChapterBlock
+              key={ch.id}
+              chapter={ch}
+              clientName={currentClient.company}
+              isFirst={i === 0}
+            />
+          ))}
+        </article>
       </div>
 
-      {/* Import Modal */}
       <StrategyImportModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
@@ -595,3 +241,295 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
     </div>
   );
 };
+
+/* ========================================================================== */
+
+const KeyDecision: React.FC<{ label: string; text: string; bordered?: boolean }> = ({
+  label,
+  text,
+  bordered,
+}) => (
+  <div className={bordered ? 'md:border-l md:border-slate-200 dark:md:border-slate-800 md:pl-8' : ''}>
+    <span className="t-label text-slate-500">{label}</span>
+    <p className="t-body text-slate-800 dark:text-slate-200 mt-2">{text}</p>
+  </div>
+);
+
+const SubHeading: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <h3 className="t-label text-slate-400 dark:text-slate-500 mt-10 mb-4">{children}</h3>
+);
+
+/**
+ * Um capítulo do plano. Cada bloco opcional só aparece quando o documento
+ * importado trouxe aquele conteúdo.
+ */
+const ChapterBlock: React.FC<{
+  chapter: StrategyChapter;
+  clientName: string;
+  isFirst: boolean;
+}> = ({ chapter, clientName, isFirst }) => (
+  <section
+    id={chapter.id}
+    data-chapter
+    className={isFirst ? '' : 'mt-20 pt-14 border-t border-slate-200 dark:border-slate-800'}
+  >
+    <span className="t-label text-slate-400 dark:text-slate-500">{chapter.tag}</span>
+    <h2 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight mt-2">
+      {chapter.title}
+    </h2>
+    {chapter.subtitle && (
+      <p className="t-body text-slate-600 dark:text-slate-300 mt-3">{chapter.subtitle}</p>
+    )}
+
+    {chapter.callout && (
+      <blockquote className="border-l-2 border-amber-500 pl-6 my-8">
+        <p className="text-[19px] leading-relaxed text-slate-800 dark:text-slate-200 italic">
+          “{chapter.callout.quote}”
+        </p>
+        {chapter.callout.caption && (
+          <span className="t-label text-slate-500 block mt-3">{chapter.callout.caption}</span>
+        )}
+      </blockquote>
+    )}
+
+    {!!chapter.portfolioItems?.length && (
+      <>
+        <SubHeading>Portfólio e papel na receita</SubHeading>
+        <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.portfolioItems.map((item, i) => (
+            <li key={i} className="py-5 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+              <div className="flex items-start gap-4 min-w-0">
+                <span className="text-[22px] select-none leading-none pt-0.5">{item.icon || '•'}</span>
+                <div className="min-w-0">
+                  <h4 className="t-lead font-semibold text-slate-900 dark:text-white">{item.title}</h4>
+                  <p className="t-body text-slate-600 dark:text-slate-300 mt-1">{item.description}</p>
+                </div>
+              </div>
+              {item.tag && (
+                <span className="shrink-0 self-start t-meta text-slate-500 dark:text-slate-400 sm:text-right">
+                  {item.tag}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </>
+    )}
+
+    {!!chapter.occasions?.length && (
+      <>
+        <SubHeading>Segmentação por ocasião</SubHeading>
+        <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.occasions.map((occ, i) => (
+            <li key={i} className="py-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+              <div className="min-w-0">
+                <p className="t-lead font-medium text-slate-900 dark:text-white">{occ.role}</p>
+                <p className="t-body text-slate-600 dark:text-slate-400 mt-0.5">{occ.description}</p>
+              </div>
+              {occ.priority && (
+                <span className="shrink-0 t-meta text-slate-500 dark:text-slate-400">
+                  Prioridade {occ.priority}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </>
+    )}
+
+    {!!chapter.journeySteps?.length && (
+      <>
+        <SubHeading>Jornada da cliente</SubHeading>
+        <ol className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.journeySteps.map((j) => (
+            <li key={j.step} className="py-4 flex items-baseline gap-3">
+              <span className="shrink-0 t-meta tabular-nums text-slate-400 dark:text-slate-600">
+                {String(j.step).padStart(2, '0')}
+              </span>
+              <div className="min-w-0">
+                <p className="t-lead font-medium text-slate-900 dark:text-white">{j.name}</p>
+                {j.quote && (
+                  <p className="t-body text-slate-500 dark:text-slate-400 italic mt-0.5">“{j.quote}”</p>
+                )}
+                {j.touchpoints && (
+                  <p className="t-meta text-slate-500 dark:text-slate-400 mt-1.5">
+                    Pontos de contato: {j.touchpoints}
+                  </p>
+                )}
+              </div>
+            </li>
+          ))}
+        </ol>
+      </>
+    )}
+
+    {!!chapter.commercialSteps?.length && (
+      <>
+        <SubHeading>Do primeiro contato à visita</SubHeading>
+        <ol className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.commercialSteps.map((step) => (
+            <li key={step.step} className="py-4 flex items-baseline gap-3">
+              <span className="shrink-0 t-meta tabular-nums text-slate-400 dark:text-slate-600">
+                {String(step.step).padStart(2, '0')}
+              </span>
+              <div className="min-w-0">
+                <p className="t-lead font-medium text-slate-900 dark:text-white">{step.title}</p>
+                <p className="t-body text-slate-600 dark:text-slate-300 mt-0.5">{step.description}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </>
+    )}
+
+    {chapter.bottleneck && (
+      <div className="my-8 border-l-2 border-rose-500 pl-6">
+        <span className="t-label text-rose-700 dark:text-rose-400 flex items-center gap-2">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          {chapter.bottleneck.title}
+        </span>
+        {chapter.bottleneck.subtitle && (
+          <p className="t-lead font-semibold text-slate-900 dark:text-white mt-2">
+            {chapter.bottleneck.subtitle}
+          </p>
+        )}
+        <p className="t-body text-slate-700 dark:text-slate-300 mt-1">
+          {chapter.bottleneck.description}
+        </p>
+      </div>
+    )}
+
+    {chapter.swot && (
+      <>
+        <SubHeading>Análise SWOT</SubHeading>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-8">
+          <SwotList title="Forças" items={chapter.swot.strengths} accent="text-emerald-700 dark:text-emerald-400" />
+          <SwotList title="Fraquezas" items={chapter.swot.weaknesses} accent="text-rose-700 dark:text-rose-400" />
+          <SwotList title="Oportunidades" items={chapter.swot.opportunities} accent="text-sky-700 dark:text-sky-400" />
+          <SwotList title="Ameaças" items={chapter.swot.threats} accent="text-amber-700 dark:text-amber-500" />
+        </div>
+      </>
+    )}
+
+    {!!chapter.kpis?.length && (
+      <>
+        <SubHeading>Metas e indicadores</SubHeading>
+        <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.kpis.map((kpi, i) => (
+            <li key={i} className="py-4 flex flex-col sm:flex-row sm:items-baseline justify-between gap-2">
+              <div className="min-w-0">
+                <p className="t-lead font-medium text-slate-900 dark:text-white">{kpi.metric}</p>
+                <p className="t-body text-slate-600 dark:text-slate-400 mt-0.5">{kpi.why}</p>
+              </div>
+              <div className="shrink-0 sm:text-right">
+                <p className="t-lead font-semibold text-slate-950 dark:text-white tabular-nums">
+                  {kpi.target}
+                </p>
+                <p className="t-meta text-slate-500 dark:text-slate-400">{kpi.frequency}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </>
+    )}
+
+    {!!chapter.quarterPlan?.length && (
+      <>
+        <SubHeading>Plano de 90 dias</SubHeading>
+        <div className="space-y-8 border-t border-slate-200 dark:border-slate-800 pt-6">
+          {chapter.quarterPlan.map((plan, i) => (
+            <div key={i}>
+              <div className="flex items-baseline justify-between gap-4 flex-wrap">
+                <h4 className="t-lead font-semibold text-slate-950 dark:text-white">
+                  {plan.month} · {plan.title}
+                </h4>
+                <span className="t-meta text-slate-500 dark:text-slate-400">Foco: {plan.focus}</span>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {plan.actions.map((act, ai) => (
+                  <li key={ai} className="flex gap-3 t-body text-slate-700 dark:text-slate-300">
+                    <span className="text-slate-400 select-none">•</span>
+                    <span>{act}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </>
+    )}
+
+    {!!chapter.responsibilities?.length && (
+      <>
+        <SubHeading>Quem faz o quê</SubHeading>
+        <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.responsibilities.map((resp, i) => (
+            <li key={i} className="py-5">
+              <p className="t-lead font-semibold text-slate-900 dark:text-white">{resp.category}</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 mt-3">
+                <div>
+                  <span className="t-label text-amber-600 dark:text-amber-500">Beewave</span>
+                  <div className="mt-1.5 space-y-1">
+                    {resp.agency.map((a, ai) => (
+                      <p key={ai} className="t-body text-slate-700 dark:text-slate-300">
+                        {a}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <span className="t-label text-slate-500">{clientName}</span>
+                  <div className="mt-1.5 space-y-1">
+                    {resp.client.map((c, ci) => (
+                      <p key={ci} className="t-body text-slate-700 dark:text-slate-300">
+                        {c}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </>
+    )}
+
+    {!!chapter.glossary?.length && (
+      <>
+        <SubHeading>Glossário</SubHeading>
+        <dl className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {chapter.glossary.map((item, i) => (
+            <div key={i} className="py-4">
+              <dt className="t-lead font-medium text-slate-900 dark:text-white">{item.term}</dt>
+              <dd className="t-body text-slate-600 dark:text-slate-400 mt-0.5">{item.definition}</dd>
+            </div>
+          ))}
+        </dl>
+      </>
+    )}
+
+    {chapter.contentMarkdown && (
+      <p className="t-body text-slate-700 dark:text-slate-300 whitespace-pre-line mt-6">
+        {chapter.contentMarkdown}
+      </p>
+    )}
+  </section>
+);
+
+const SwotList: React.FC<{ title: string; items: string[]; accent: string }> = ({
+  title,
+  items,
+  accent,
+}) => (
+  <div>
+    <span className={`t-label ${accent}`}>{title}</span>
+    <ul className="mt-2.5 space-y-2">
+      {items.map((s, i) => (
+        <li key={i} className="flex gap-3 t-body text-slate-700 dark:text-slate-300">
+          <span className="text-slate-400 select-none">•</span>
+          <span>{s}</span>
+        </li>
+      ))}
+    </ul>
+  </div>
+);
