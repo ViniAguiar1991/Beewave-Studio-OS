@@ -1,556 +1,509 @@
-import React, { useState } from 'react';
-import {
-  FolderKanban,
-  Plus,
-  Calendar,
-  CheckCircle2,
-  Clock,
-  Sparkles,
-  ChevronRight,
-  MoreVertical,
-  Trash2,
-  Edit2,
-  Layers,
-  Search,
-  Filter,
-  ArrowUpRight,
-  Folder,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Search, X, Pencil, Trash2, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../store';
 import { Campaign, Task } from '../types';
-import { getStatusBadgeStyle, getStatusLabel } from '../utils/badgeStyles';
+import { getColor, hexToColorKey } from '../lib/taskViews';
 import { formatFriendlyDate } from '../utils/dateFormatter';
+import { FolderCard, FolderAction } from './FolderCard';
+import { Button, EmptyState, BlockHeader } from './ui';
 
 interface CampaignsViewProps {
   onSelectTask: (taskId: string) => void;
   onNewTaskForCampaign: (campaignId: string, clientId: string) => void;
-  onSelectClient?: (clientId: string) => void;
+  onSelectClient: (clientId: string) => void;
 }
 
+const STATUS_CAMPANHA: { key: Campaign['status']; label: string; cor: string }[] = [
+  { key: 'planejamento', label: 'Planejamento', cor: 'slate' },
+  { key: 'em_producao', label: 'Em produção', cor: 'amber' },
+  { key: 'em_aprovacao', label: 'Em aprovação', cor: 'sky' },
+  { key: 'concluida', label: 'Concluída', cor: 'emerald' },
+  { key: 'pausada', label: 'Pausada', cor: 'rose' },
+];
+
+const rotuloStatus = (s: Campaign['status']) =>
+  STATUS_CAMPANHA.find((x) => x.key === s) || STATUS_CAMPANHA[0];
+
+/**
+ * Campanhas — pastas de pautas com começo, meio e fim.
+ *
+ * Uma campanha existe para agrupar: "15 anos da Perfetto" reúne dez pautas
+ * que só fazem sentido juntas. Por isso o formato de pasta, e por isso cada
+ * uma mostra quantas pautas guarda e em que pé estão.
+ *
+ * A tela abre nas pastas, não num formulário: criar campanha é raro, olhar
+ * campanha é diário.
+ */
 export const CampaignsView: React.FC<CampaignsViewProps> = ({
   onSelectTask,
   onNewTaskForCampaign,
   onSelectClient,
 }) => {
-  const campaigns = useAppStore((s) => s.campaigns || []);
+  const campaigns = useAppStore((s) => s.campaigns);
   const clients = useAppStore((s) => s.clients);
   const tasks = useAppStore((s) => s.tasks);
+  const statuses = useAppStore((s) => s.statuses);
   const addCampaign = useAppStore((s) => s.addCampaign);
   const updateCampaign = useAppStore((s) => s.updateCampaign);
   const deleteCampaign = useAppStore((s) => s.deleteCampaign);
 
-  const [selectedClientId, setSelectedClientId] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isNewModalOpen, setIsNewModalOpen] = useState(false);
-  const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
+  const [busca, setBusca] = useState('');
+  const [clienteFiltro, setClienteFiltro] = useState('all');
+  const [editando, setEditando] = useState<Campaign | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [aberta, setAberta] = useState<string | null>(null);
 
-  // Form state
-  const [newTitle, setNewTitle] = useState('');
-  const [newClientId, setNewClientId] = useState(clients[0]?.id || '');
-  const [newDescription, setNewDescription] = useState('');
-  const [newStartDate, setNewStartDate] = useState(new Date().toISOString().slice(0, 10));
-  const [newEndDate, setNewEndDate] = useState('');
-  const [newEmoji, setNewEmoji] = useState('📁');
-  const [newStatus, setNewStatus] = useState<Campaign['status']>('planejamento');
+  const visiveis = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    return campaigns.filter((c) => {
+      if (clienteFiltro !== 'all' && c.clientId !== clienteFiltro) return false;
+      if (!termo) return true;
+      const cliente = clients.find((x) => x.id === c.clientId);
+      return (
+        c.title.toLowerCase().includes(termo) ||
+        (c.description || '').toLowerCase().includes(termo) ||
+        (cliente?.company || '').toLowerCase().includes(termo)
+      );
+    });
+  }, [campaigns, clients, busca, clienteFiltro]);
 
-  const filteredCampaigns = campaigns.filter((camp) => {
-    if (selectedClientId !== 'all' && camp.clientId !== selectedClientId) return false;
-    if (selectedStatus !== 'all' && camp.status !== selectedStatus) return false;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      const client = clients.find((c) => c.id === camp.clientId);
-      const match =
-        camp.title.toLowerCase().includes(q) ||
-        (camp.description || '').toLowerCase().includes(q) ||
-        (client?.company || '').toLowerCase().includes(q);
-      if (!match) return false;
-    }
-    return true;
-  });
+  const campanhaAberta = campaigns.find((c) => c.id === aberta);
+  const pautasDaAberta = tasks.filter((t) => t.campaignId === aberta);
 
-  const handleSaveCampaign = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTitle.trim() || !newClientId) return;
+  /* ------------------------------ detalhe ------------------------------ */
 
-    if (editingCampaign) {
-      updateCampaign(editingCampaign.id, {
-        title: newTitle.trim(),
-        clientId: newClientId,
-        description: newDescription.trim(),
-        startDate: newStartDate,
-        endDate: newEndDate,
-        folderEmoji: newEmoji,
-        status: newStatus,
-      });
-      setEditingCampaign(null);
-    } else {
-      addCampaign({
-        title: newTitle.trim(),
-        clientId: newClientId,
-        description: newDescription.trim(),
-        startDate: newStartDate,
-        endDate: newEndDate,
-        folderEmoji: newEmoji,
-        status: newStatus,
-      });
-    }
+  if (campanhaAberta) {
+    const cliente = clients.find((c) => c.id === campanhaAberta.clientId);
+    const st = rotuloStatus(campanhaAberta.status);
 
-    // Reset
-    setNewTitle('');
-    setNewDescription('');
-    setNewEndDate('');
-    setIsNewModalOpen(false);
-  };
+    return (
+      <div className="mx-auto max-w-5xl space-y-8 pb-16">
+        <button
+          onClick={() => setAberta(null)}
+          className="inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+        >
+          <ArrowRight className="h-4 w-4 rotate-180" />
+          Voltar para campanhas
+        </button>
 
-  const handleOpenEdit = (camp: Campaign) => {
-    setEditingCampaign(camp);
-    setNewTitle(camp.title);
-    setNewClientId(camp.clientId);
-    setNewDescription(camp.description || '');
-    setNewStartDate(camp.startDate || new Date().toISOString().slice(0, 10));
-    setNewEndDate(camp.endDate || '');
-    setNewEmoji(camp.folderEmoji || '📁');
-    setNewStatus(camp.status);
-    setIsNewModalOpen(true);
-  };
+        <header className="space-y-3 border-b border-slate-200 dark:border-slate-800 pb-6">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className={`inline-flex items-center gap-1.5 t-meta ${getColor(st.cor).text}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${getColor(st.cor).solid}`} />
+              {st.label}
+            </span>
+            {cliente && (
+              <button
+                onClick={() => onSelectClient(cliente.id)}
+                className="t-meta text-slate-500 hover:text-slate-900 dark:hover:text-white underline underline-offset-4 cursor-pointer"
+              >
+                {cliente.company}
+              </button>
+            )}
+          </div>
 
-  const emojiChoices = ['📁', '🎂', '🏷️', '👰‍♀️', '🚀', '🛍️', '💎', '📢', '🌟', '🎯', '📸', '✨'];
+          <h1 className="font-display text-[30px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
+            {campanhaAberta.title}
+          </h1>
+
+          {campanhaAberta.description && (
+            <p className="t-body text-slate-600 dark:text-slate-400 max-w-2xl">
+              {campanhaAberta.description}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3 flex-wrap pt-2">
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Plus}
+              onClick={() => onNewTaskForCampaign(campanhaAberta.id, campanhaAberta.clientId)}
+            >
+              Nova pauta na campanha
+            </Button>
+            <Button variant="secondary" size="sm" icon={Pencil} onClick={() => setEditando(campanhaAberta)}>
+              Editar campanha
+            </Button>
+          </div>
+        </header>
+
+        <section className="space-y-4">
+          <BlockHeader
+            title="Pautas da campanha"
+            count={`${pautasDaAberta.length} ${pautasDaAberta.length === 1 ? 'pauta' : 'pautas'}`}
+          />
+
+          {pautasDaAberta.length === 0 ? (
+            <EmptyState
+              title="Nenhuma pauta nesta campanha ainda"
+              hint="Crie a primeira pauta para começar a montar o calendário desta campanha."
+            />
+          ) : (
+            <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+              {pautasDaAberta.map((t) => {
+                const status = statuses.find((s) => s.key === t.status);
+                const cor = getColor(hexToColorKey(status?.color));
+                const dia = (t.postDate || t.date || '').split('T')[0];
+                return (
+                  <li key={t.id}>
+                    <button
+                      onClick={() => onSelectTask(t.id)}
+                      className="w-full flex items-center gap-4 py-3.5 text-left group cursor-pointer"
+                    >
+                      <span className="min-w-0 flex-1 t-lead font-medium text-slate-900 dark:text-white truncate group-hover:underline underline-offset-4">
+                        {t.selectedHeadline || t.headline || t.title}
+                      </span>
+                      <span className={`shrink-0 inline-flex items-center gap-1.5 t-meta ${cor.text}`}>
+                        <span className={`h-1.5 w-1.5 rounded-full ${cor.solid}`} />
+                        {status?.label || t.status}
+                      </span>
+                      <span className="shrink-0 t-meta text-slate-400 dark:text-slate-500 w-[130px] text-right">
+                        {dia ? formatFriendlyDate(dia) : 'Sem data'}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        {editando && (
+          <FormularioCampanha
+            campanha={editando}
+            onClose={() => setEditando(null)}
+            onSave={(dados) => {
+              updateCampaign(editando.id, dados);
+              setEditando(null);
+            }}
+          />
+        )}
+      </div>
+    );
+  }
+
+  /* ------------------------------- lista ------------------------------- */
 
   return (
-    <div id="campaigns-view" className="mx-auto max-w-6xl space-y-8 pb-20 animate-fade-in">
-      {/* Top Header - Notion style: clear, light, free of heavy boxes */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200/80 dark:border-slate-800">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
-            <FolderKanban className="h-4 w-4 text-amber-500" />
-            <span>Gestão Estratégica & Campanhas</span>
-          </div>
-          <h1 className="text-2xl md:text-3xl font-display font-bold text-slate-900 dark:text-white tracking-tight">
-            Campanhas e Pastas Especiais
+    <div className="mx-auto max-w-6xl space-y-6 pb-16">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-[30px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
+            Campanhas
           </h1>
-          <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 max-w-2xl leading-relaxed">
-            Organize entregas sazonais, tablóides mensais, aniversários e lançamentos em pastas com fluxo de produção dedicado.
+          <p className="t-body text-slate-600 dark:text-slate-400 mt-1">
+            Pastas que agrupam pautas com um objetivo e um período em comum.
           </p>
         </div>
+        <Button variant="primary" icon={Plus} onClick={() => setCriando(true)}>
+          Nova campanha
+        </Button>
+      </header>
 
-        <button
-          id="btn-new-campaign"
-          onClick={() => {
-            setEditingCampaign(null);
-            setNewTitle('');
-            setNewDescription('');
-            setNewClientId(clients[0]?.id || '');
-            setNewEmoji('📁');
-            setNewStatus('planejamento');
-            setIsNewModalOpen(true);
-          }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-bold text-xs shadow-xs transition-all active:scale-95 cursor-pointer shrink-0 self-start sm:self-center"
-        >
-          <Plus className="h-4 w-4" />
-          <span>Nova Pasta de Campanha</span>
-        </button>
-      </div>
-
-      {/* Filter Bar - Clean inline controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Search */}
-        <div className="relative flex-1 min-w-[200px] max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
           <input
-            type="text"
-            placeholder="Buscar campanha por nome ou cliente..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="clean-input h-9 w-full pl-9 pr-3 text-xs bg-white dark:bg-slate-900"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar campanha ou cliente…"
+            className="w-full h-9 pl-9 pr-8 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors"
           />
+          {busca && (
+            <button
+              onClick={() => setBusca('')}
+              aria-label="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid h-5 w-5 place-items-center rounded text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
 
-        {/* Client Filter */}
-        <div className="w-48">
-          <select
-            value={selectedClientId}
-            onChange={(e) => setSelectedClientId(e.target.value)}
-            className="clean-input h-9 w-full px-2.5 text-xs bg-white dark:bg-slate-900 cursor-pointer"
-          >
-            <option value="all">Todos os clientes</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.company}
-              </option>
-            ))}
-          </select>
-        </div>
+        <select
+          value={clienteFiltro}
+          onChange={(e) => setClienteFiltro(e.target.value)}
+          aria-label="Filtrar por cliente"
+          className="h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-3 t-ui text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white"
+        >
+          <option value="all">Todos os clientes</option>
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.company}
+            </option>
+          ))}
+        </select>
 
-        {/* Status Filter */}
-        <div className="w-40">
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="clean-input h-9 w-full px-2.5 text-xs bg-white dark:bg-slate-900 cursor-pointer"
-          >
-            <option value="all">Todos os status</option>
-            <option value="planejamento">Planejamento</option>
-            <option value="em_producao">Em produção</option>
-            <option value="em_aprovacao">Em aprovação</option>
-            <option value="concluida">Concluída</option>
-            <option value="pausada">Pausada</option>
-          </select>
-        </div>
+        <span className="t-meta text-slate-400 dark:text-slate-500">
+          {visiveis.length} {visiveis.length === 1 ? 'campanha' : 'campanhas'}
+        </span>
       </div>
 
-      {/* Campaigns Listing - Notion-Style Folder Cards with direct task groups */}
-      {filteredCampaigns.length === 0 ? (
-        <div className="text-center py-16 px-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/40">
-          <FolderKanban className="h-10 w-10 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
-          <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-            Nenhuma campanha encontrada
-          </h3>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm mx-auto">
-            Crie uma pasta de campanha para agrupar as tarefas recorrentes ou pontuais dos seus clientes.
-          </p>
-        </div>
+      {visiveis.length === 0 ? (
+        <EmptyState
+          title={
+            campaigns.length === 0
+              ? 'Nenhuma campanha criada'
+              : 'Nenhuma campanha com esse filtro'
+          }
+          hint={
+            campaigns.length === 0
+              ? 'Use campanhas para agrupar as pautas de uma ação específica — um aniversário de loja, um lançamento, uma data comemorativa.'
+              : 'Tente outro termo ou volte para todos os clientes.'
+          }
+          action={
+            campaigns.length === 0 ? (
+              <Button variant="primary" size="sm" icon={Plus} onClick={() => setCriando(true)}>
+                Criar a primeira campanha
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="space-y-6">
-          {filteredCampaigns.map((camp) => {
-            const client = clients.find((c) => c.id === camp.clientId);
-            const campTasks = tasks.filter((t) => t.campaignId === camp.id);
-            const completedCount = campTasks.filter(
-              (t) => t.status === 'aprovado' || t.status === 'postado'
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-7 pt-2">
+          {visiveis.map((campanha) => {
+            const cliente = clients.find((c) => c.id === campanha.clientId);
+            const pautas = tasks.filter((t) => t.campaignId === campanha.id);
+            const concluidas = pautas.filter((t) =>
+              ['aprovado', 'postado'].includes(t.status)
             ).length;
-            const progressPercent =
-              campTasks.length > 0 ? Math.round((completedCount / campTasks.length) * 100) : 0;
-
-            const statusStyles: Record<string, { label: string; bg: string; text: string }> = {
-              planejamento: { label: 'Planejamento', bg: 'bg-slate-100 dark:bg-slate-800', text: 'text-slate-700 dark:text-slate-300' },
-              em_producao: { label: 'Em Produção', bg: 'bg-blue-50 dark:bg-blue-950/60', text: 'text-blue-700 dark:text-blue-300' },
-              em_aprovacao: { label: 'Em Aprovação', bg: 'bg-amber-50 dark:bg-amber-950/60', text: 'text-amber-800 dark:text-amber-300' },
-              concluida: { label: 'Concluída', bg: 'bg-emerald-50 dark:bg-emerald-950/60', text: 'text-emerald-700 dark:text-emerald-300' },
-              pausada: { label: 'Pausada', bg: 'bg-rose-50 dark:bg-rose-950/60', text: 'text-rose-700 dark:text-rose-300' },
-            };
-            const currentStatusStyle = statusStyles[camp.status] || statusStyles.planejamento;
+            const pendentes = pautas.length - concluidas;
+            const st = rotuloStatus(campanha.status);
 
             return (
-              <div
-                key={camp.id}
-                className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-5 md:p-6 shadow-2xs hover:border-slate-300 dark:hover:border-slate-700 transition-all space-y-5"
-              >
-                {/* Folder Header */}
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-100 dark:border-slate-800">
-                  <div className="flex items-start gap-3.5">
-                    <span className="text-3xl p-2 rounded-xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700 select-none">
-                      {camp.folderEmoji || '📁'}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <h2 className="text-base md:text-lg font-bold text-slate-900 dark:text-white leading-snug">
-                          {camp.title}
-                        </h2>
-                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${currentStatusStyle.bg} ${currentStatusStyle.text}`}>
-                          {currentStatusStyle.label}
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-wrap">
-                        {client && (
-                          <button
-                            type="button"
-                            onClick={() => onSelectClient && onSelectClient(client.id)}
-                            className="font-medium text-slate-700 dark:text-slate-300 hover:text-amber-600 dark:hover:text-amber-400 hover:underline cursor-pointer"
-                          >
-                            {client.company}
-                          </button>
-                        )}
-                        <span>•</span>
-                        <div className="flex items-center gap-1">
-                          <Calendar className="h-3.5 w-3.5" />
-                          <span>
-                            {camp.startDate ? formatFriendlyDate(camp.startDate) : 'Início imediato'}
-                            {camp.endDate ? ` até ${formatFriendlyDate(camp.endDate)}` : ''}
-                          </span>
-                        </div>
-                      </div>
-
-                      {camp.description && (
-                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-2 max-w-3xl leading-relaxed">
-                          {camp.description}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Actions & Progress */}
-                  <div className="flex items-center gap-3 self-end md:self-center shrink-0">
-                    <div className="text-right hidden sm:block">
-                      <p className="text-xs font-bold text-slate-900 dark:text-white">
-                        {completedCount} de {campTasks.length} concluídas
-                      </p>
-                      <div className="w-28 h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full mt-1 overflow-hidden">
-                        <div
-                          className="h-full bg-emerald-500 rounded-full transition-all duration-300"
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => onNewTaskForCampaign(camp.id, camp.clientId)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer"
-                      title="Adicionar nova entrega nesta pasta"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>Nova Tarefa</span>
-                    </button>
-
-                    <button
-                      onClick={() => handleOpenEdit(camp)}
-                      className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
-                      title="Editar pasta de campanha"
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </button>
-
-                    <button
+              <FolderCard
+                key={campanha.id}
+                tabColor={getColor(st.cor).solid}
+                eyebrow={cliente?.company || 'Sem cliente'}
+                title={campanha.title}
+                subtitle={campanha.description}
+                onClick={() => setAberta(campanha.id)}
+                stats={[
+                  { valor: pautas.length, rotulo: 'pautas' },
+                  { valor: concluidas, rotulo: 'concluídas' },
+                  { valor: pendentes, rotulo: 'pendentes', destaque: pendentes > 0 },
+                ]}
+                footer={
+                  <span className={`inline-flex items-center gap-1.5 t-meta ${getColor(st.cor).text}`}>
+                    <span className={`h-1.5 w-1.5 rounded-full ${getColor(st.cor).solid}`} />
+                    {st.label}
+                    {campanha.endDate && (
+                      <span className="text-slate-400 dark:text-slate-500">
+                        · até {formatFriendlyDate(campanha.endDate)}
+                      </span>
+                    )}
+                  </span>
+                }
+                actions={
+                  <>
+                    <FolderAction
+                      icon={Pencil}
+                      label="Editar campanha"
+                      onClick={() => setEditando(campanha)}
+                    />
+                    <FolderAction
+                      icon={Trash2}
+                      label="Excluir campanha"
+                      danger
                       onClick={() => {
-                        if (window.confirm(`Deseja remover a pasta "${camp.title}"? As tarefas continuarão salvas sem o vínculo desta campanha.`)) {
-                          deleteCampaign(camp.id);
+                        if (
+                          window.confirm(
+                            `Excluir a campanha "${campanha.title}"? As pautas continuam existindo, só deixam de ficar agrupadas.`
+                          )
+                        ) {
+                          deleteCampaign(campanha.id);
                         }
                       }}
-                      className="p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-600 cursor-pointer"
-                      title="Excluir pasta de campanha"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Grouped Tasks inside this Campaign */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 px-1">
-                    <span>Entregas vinculadas ({campTasks.length})</span>
-                  </div>
-
-                  {campTasks.length === 0 ? (
-                    <div className="p-4 rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-center text-xs text-slate-400">
-                      Nenhuma tarefa vinculada a esta pasta ainda.{' '}
-                      <button
-                        onClick={() => onNewTaskForCampaign(camp.id, camp.clientId)}
-                        className="text-amber-600 dark:text-amber-400 font-bold hover:underline cursor-pointer ml-1"
-                      >
-                        Clique para adicionar a primeira tarefa.
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-100 dark:divide-slate-800/80 border border-slate-100 dark:border-slate-800 rounded-xl overflow-hidden">
-                      {campTasks.map((t) => {
-                        const isDone = t.status === 'aprovado' || t.status === 'postado';
-                        return (
-                          <div
-                            key={t.id}
-                            onClick={() => onSelectTask(t.id)}
-                            className="flex items-center justify-between gap-3 p-3 bg-white hover:bg-slate-50/80 dark:bg-slate-900/60 dark:hover:bg-slate-800/50 cursor-pointer transition-colors text-xs"
-                          >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <span className="shrink-0 text-slate-400">
-                                {isDone ? (
-                                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                                ) : (
-                                  <Clock className="h-4 w-4 text-amber-500" />
-                                )}
-                              </span>
-                              <div className="min-w-0">
-                                <p
-                                  className={`font-semibold truncate text-slate-900 dark:text-white ${
-                                    isDone ? 'line-through text-slate-400 dark:text-slate-500' : ''
-                                  }`}
-                                >
-                                  {t.title}
-                                </p>
-                                <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
-                                  {t.format && (
-                                    <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-medium">
-                                      {t.format}
-                                    </span>
-                                  )}
-                                  {t.postDate && <span>Publicação: {formatFriendlyDate(t.postDate)}</span>}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${getStatusBadgeStyle(t.status)}`}>
-                                {getStatusLabel(t.status)}
-                              </span>
-                              <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
-              </div>
+                    />
+                  </>
+                }
+              />
             );
           })}
         </div>
       )}
 
-      {/* New / Edit Campaign Modal */}
-      {isNewModalOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center p-4 bg-slate-950/40 backdrop-blur-xs animate-in fade-in">
-          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <FolderKanban className="h-5 w-5 text-amber-500" />
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                  {editingCampaign ? 'Editar Pasta de Campanha' : 'Nova Pasta de Campanha'}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsNewModalOpen(false)}
-                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 text-xs font-bold cursor-pointer"
+      {(criando || editando) && (
+        <FormularioCampanha
+          campanha={editando}
+          onClose={() => {
+            setCriando(false);
+            setEditando(null);
+          }}
+          onSave={(dados) => {
+            if (editando) updateCampaign(editando.id, dados);
+            else addCampaign(dados);
+            setCriando(false);
+            setEditando(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+/* ========================================================================== */
+
+const FormularioCampanha: React.FC<{
+  campanha: Campaign | null;
+  onClose: () => void;
+  onSave: (dados: Partial<Campaign>) => void;
+}> = ({ campanha, onClose, onSave }) => {
+  const clients = useAppStore((s) => s.clients);
+
+  const [title, setTitle] = useState(campanha?.title || '');
+  const [clientId, setClientId] = useState(campanha?.clientId || clients[0]?.id || '');
+  const [description, setDescription] = useState(campanha?.description || '');
+  const [startDate, setStartDate] = useState(campanha?.startDate || '');
+  const [endDate, setEndDate] = useState(campanha?.endDate || '');
+  const [status, setStatus] = useState<Campaign['status']>(campanha?.status || 'planejamento');
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim() || !clientId) return;
+    onSave({ title: title.trim(), clientId, description: description.trim(), startDate, endDate, status });
+  };
+
+  const campo =
+    'w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors';
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center p-0 sm:p-6">
+      <div className="absolute inset-0 bg-slate-950/55" onClick={onClose} aria-hidden="true" />
+
+      <form
+        onSubmit={submit}
+        role="dialog"
+        aria-modal="true"
+        aria-label={campanha ? 'Editar campanha' : 'Nova campanha'}
+        className="relative w-full sm:max-w-lg bg-white dark:bg-[#0f1114] sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl"
+        style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <div className="flex items-center justify-between gap-4 px-6 h-14 border-b border-slate-200 dark:border-slate-800">
+          <h2 className="font-display text-[18px] font-semibold tracking-tight text-slate-950 dark:text-white">
+            {campanha ? 'Editar campanha' : 'Nova campanha'}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-6 space-y-5">
+          <div>
+            <label htmlFor="camp-title" className="block t-label text-slate-500 mb-1.5">
+              Nome da campanha
+            </label>
+            <input
+              id="camp-title"
+              autoFocus
+              required
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex.: 15 anos da Perfetto Uomo"
+              className={campo}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="camp-client" className="block t-label text-slate-500 mb-1.5">
+                Cliente
+              </label>
+              <select
+                id="camp-client"
+                value={clientId}
+                onChange={(e) => setClientId(e.target.value)}
+                className={`${campo} cursor-pointer`}
               >
-                ✕
-              </button>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.company}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <form onSubmit={handleSaveCampaign} className="space-y-4 text-xs">
-              {/* Emoji Picker */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Ícone da Pasta
-                </label>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {emojiChoices.map((emo) => (
-                    <button
-                      type="button"
-                      key={emo}
-                      onClick={() => setNewEmoji(emo)}
-                      className={`text-xl p-2 rounded-xl border transition-all cursor-pointer ${
-                        newEmoji === emo
-                          ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/40 scale-110'
-                          : 'border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
-                      }`}
-                    >
-                      {emo}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            <div>
+              <label htmlFor="camp-status" className="block t-label text-slate-500 mb-1.5">
+                Situação
+              </label>
+              <select
+                id="camp-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as Campaign['status'])}
+                className={`${campo} cursor-pointer`}
+              >
+                {STATUS_CAMPANHA.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-              {/* Title */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Título da Campanha / Projeto *
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="Ex: Campanha de 15 Anos • Perfetto Uomo"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="clean-input h-10 w-full px-3 text-xs font-semibold"
-                />
-              </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="camp-start" className="block t-label text-slate-500 mb-1.5">
+                Começa em
+              </label>
+              <input
+                id="camp-start"
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className={`${campo} cursor-pointer`}
+              />
+            </div>
+            <div>
+              <label htmlFor="camp-end" className="block t-label text-slate-500 mb-1.5">
+                Termina em
+              </label>
+              <input
+                id="camp-end"
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                className={`${campo} cursor-pointer`}
+              />
+            </div>
+          </div>
 
-              {/* Client Selector */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Cliente Vinculado *
-                </label>
-                <select
-                  required
-                  value={newClientId}
-                  onChange={(e) => setNewClientId(e.target.value)}
-                  className="clean-input h-10 w-full px-3 text-xs cursor-pointer"
-                >
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.company}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Date range */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Data de Início
-                  </label>
-                  <input
-                    type="date"
-                    value={newStartDate}
-                    onChange={(e) => setNewStartDate(e.target.value)}
-                    className="clean-input h-10 w-full px-2.5 text-xs cursor-pointer"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Data de Término
-                  </label>
-                  <input
-                    type="date"
-                    value={newEndDate}
-                    onChange={(e) => setNewEndDate(e.target.value)}
-                    className="clean-input h-10 w-full px-2.5 text-xs cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Status */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Status
-                </label>
-                <select
-                  value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as any)}
-                  className="clean-input h-10 w-full px-3 text-xs cursor-pointer"
-                >
-                  <option value="planejamento">Planejamento</option>
-                  <option value="em_producao">Em produção</option>
-                  <option value="em_aprovacao">Em aprovação</option>
-                  <option value="concluida">Concluída</option>
-                  <option value="pausada">Pausada</option>
-                </select>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Descrição e Metas da Campanha
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Objetivos, mídias envolvidas e orientações gerais..."
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  className="clean-input w-full p-2.5 text-xs"
-                />
-              </div>
-
-              {/* Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsNewModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 font-bold hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-bold cursor-pointer shadow-xs"
-                >
-                  {editingCampaign ? 'Salvar Alterações' : 'Criar Pasta'}
-                </button>
-              </div>
-            </form>
+          <div>
+            <label htmlFor="camp-desc" className="block t-label text-slate-500 mb-1.5">
+              Objetivo
+            </label>
+            <textarea
+              id="camp-desc"
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="O que esta campanha precisa alcançar?"
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent p-3 t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors"
+            />
           </div>
         </div>
-      )}
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800">
+          <Button variant="ghost" type="button" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={!title.trim()}>
+            {campanha ? 'Salvar alterações' : 'Criar campanha'}
+          </Button>
+        </div>
+      </form>
     </div>
   );
 };

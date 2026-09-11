@@ -1,351 +1,341 @@
-import React, { useState, useEffect } from 'react';
-import {
-  Plus,
-  Search,
-  ArrowRight,
-  X,
-  Building,
-} from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Plus, Search, X } from 'lucide-react';
 import { useAppStore } from '../store';
+import { Client } from '../types';
+import { resumoDaSemana } from '../lib/weekPlan';
+import { FolderCard } from './FolderCard';
+import { Button, EmptyState } from './ui';
 
 interface ClientsListViewProps {
   onSelectClient: (clientId: string) => void;
 }
 
+const iniciais = (nome: string) =>
+  nome
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join('')
+    .toUpperCase();
+
+/**
+ * Clientes — uma pasta por conta.
+ *
+ * Cada pasta responde o que interessa de relance: quantas pautas estão em
+ * produção, quantas esperam o cliente e se falta planejar alguma coisa da
+ * semana. Antes a lista mostrava total de tarefas e posts por semana, que
+ * não dizem se a conta está em dia.
+ */
 export const ClientsListView: React.FC<ClientsListViewProps> = ({ onSelectClient }) => {
   const clients = useAppStore((s) => s.clients);
-  const plans = useAppStore((s) => s.plans);
   const tasks = useAppStore((s) => s.tasks);
   const addClient = useAppStore((s) => s.addClient);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showNewClientModal, setShowNewClientModal] = useState(false);
+  const [busca, setBusca] = useState('');
+  const [criando, setCriando] = useState(false);
 
-  useEffect(() => {
-    if (!showNewClientModal) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setShowNewClientModal(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showNewClientModal]);
+  const semana = useMemo(() => resumoDaSemana(clients, tasks), [clients, tasks]);
 
-  // New Client Form state
-  const [company, setCompany] = useState('');
-  const [name, setName] = useState('');
-  const [whatsapp, setWhatsapp] = useState('');
-  const [email, setEmail] = useState('');
-  const [portalEmail, setPortalEmail] = useState('');
-  const [portalPassword, setPortalPassword] = useState('1234');
-  const [niche, setNiche] = useState('');
-  const [emoji, setEmoji] = useState('🏢');
-  const [planId, setPlanId] = useState(plans[0]?.id || 'plan_pro');
-  const [mensalidade, setMensalidade] = useState(1890);
-  const [postsPerWeek, setPostsPerWeek] = useState(5);
-
-  const filteredClients = clients.filter((c) =>
-    (c.company + ' ' + c.name + ' ' + (c.niche || '')).toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleCreateClient = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!company.trim()) return;
-
-    const cleanSlug = company.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const finalPortalEmail = portalEmail.trim() || email.trim() || `${cleanSlug || 'cliente'}@cliente.com`;
-    const finalPortalPass = portalPassword.trim() || '1234';
-
-    const newClient = addClient({
-      company,
-      name,
-      whatsapp,
-      email: email.trim() || finalPortalEmail,
-      portalEmail: finalPortalEmail,
-      portalPassword: finalPortalPass,
-      niche,
-      emoji,
-      planId,
-      mensalidade: Number(mensalidade),
-      postsPerWeek: Number(postsPerWeek),
-      toneOfVoice: ['Acolhedor', 'Profissional'],
-      about: `${company} é uma empresa do segmento de ${niche || 'serviços'}.`,
-    });
-
-    // Reset form
-    setCompany('');
-    setName('');
-    setWhatsapp('');
-    setEmail('');
-    setPortalEmail('');
-    setPortalPassword('1234');
-    setNiche('');
-    setShowNewClientModal(false);
-    onSelectClient(newClient.id);
-  };
+  const visiveis = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return clients;
+    return clients.filter(
+      (c) =>
+        (c.company || '').toLowerCase().includes(termo) ||
+        (c.name || '').toLowerCase().includes(termo) ||
+        (c.niche || '').toLowerCase().includes(termo)
+    );
+  }, [clients, busca]);
 
   return (
-    <div id="clients-list-view" className="mx-auto max-w-6xl space-y-8 pb-16 animate-in fade-in">
-      {/* Header - Editorial & Unenclosed */}
-      <div className="space-y-4 pb-6 border-b border-slate-200/80 dark:border-slate-800">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
-              Gestão de Clientes e Contas
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Gerencie diretrizes de marca, personas, histórico de aprovações e cronogramas de entrega.
-            </p>
-          </div>
+    <div className="mx-auto max-w-6xl space-y-6 pb-16">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-[30px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
+            Clientes
+          </h1>
+          <p className="t-body text-slate-600 dark:text-slate-400 mt-1">
+            {clients.length} {clients.length === 1 ? 'conta ativa' : 'contas ativas'}. Cada pasta
+            guarda estratégia, pautas, arquivos e o acesso ao portal.
+          </p>
+        </div>
+        <Button variant="primary" icon={Plus} onClick={() => setCriando(true)}>
+          Novo cliente
+        </Button>
+      </header>
 
-          <div className="flex items-center gap-3">
-            <div className="relative w-64">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Buscar cliente..."
-                className="w-full text-xs p-2 pl-9 rounded-lg border border-slate-200 dark:border-slate-700 bg-transparent text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white"
-              />
-            </div>
-
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+          <input
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar cliente ou segmento…"
+            className="w-full h-9 pl-9 pr-8 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors"
+          />
+          {busca && (
             <button
-              id="btn-open-new-client-modal"
-              onClick={() => setShowNewClientModal(true)}
-              className="flex items-center gap-2 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 text-white font-medium px-4 py-2 text-xs transition-colors whitespace-nowrap cursor-pointer"
+              onClick={() => setBusca('')}
+              aria-label="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid h-5 w-5 place-items-center rounded text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
             >
-              <Plus className="h-4 w-4" strokeWidth={2} />
-              <span>Novo Cliente</span>
+              <X className="h-3 w-3" />
             </button>
-          </div>
+          )}
         </div>
       </div>
 
-      {/* Editorial List of Clients - Free of Containers, Separated by Clean Lines */}
-      {filteredClients.length > 0 ? (
-        <div className="divide-y divide-slate-200/80 dark:divide-slate-800">
-          {filteredClients.map((client) => {
-            const clientTasks = tasks.filter((t) => t.clientId === client.id);
+      {visiveis.length === 0 ? (
+        <EmptyState
+          title={clients.length === 0 ? 'Nenhum cliente cadastrado' : 'Nenhum cliente com esse nome'}
+          hint={
+            clients.length === 0
+              ? 'Cadastre o primeiro cliente para começar a programar pautas e liberar o portal de aprovação.'
+              : 'Tente outro termo de busca.'
+          }
+          action={
+            clients.length === 0 ? (
+              <Button variant="primary" size="sm" icon={Plus} onClick={() => setCriando(true)}>
+                Cadastrar cliente
+              </Button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-5 gap-y-7 pt-2">
+          {visiveis.map((client) => {
+            const resumo = semana.clientes.find((c) => c.clientId === client.id);
+            const doCliente = tasks.filter((t) => t.clientId === client.id);
+            const comCliente = doCliente.filter(
+              (t) => t.status === 'em_aprovacao' || t.status === 'alterar'
+            ).length;
+            const emProducao = doCliente.filter((t) =>
+              ['nao_iniciado', 'em_andamento', 'planejamento', 'aguardar', 'urgencia'].includes(
+                t.status
+              )
+            ).length;
 
             return (
-              <div
+              <FolderCard
                 key={client.id}
+                tabColor={comCliente > 0 ? 'bg-sky-400' : 'bg-slate-300 dark:bg-slate-700'}
+                eyebrow={client.niche || 'Sem segmento definido'}
+                title={client.company || client.name || 'Cliente'}
                 onClick={() => onSelectClient(client.id)}
-                className="py-5 first:pt-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer group hover:bg-slate-50/50 dark:hover:bg-slate-900/30 px-2 rounded-xl transition-colors"
-              >
-                {/* Left: Identity & Info */}
-                <div className="flex items-start gap-4 min-w-0 flex-1">
-                  <span className="text-2xl select-none shrink-0 pt-0.5">{client.emoji || '🏢'}</span>
-                  <div className="space-y-1 min-w-0">
-                    <div className="flex items-center gap-2.5">
-                      <h3 className="text-base font-semibold text-slate-900 dark:text-white group-hover:underline">
-                        {client.company}
-                      </h3>
-                      {client.niche && (
-                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800">
-                          {client.niche}
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1">
-                      {client.about || `Responsável: ${client.name || 'Não informado'}`}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Right: Metrics & Action */}
-                <div className="flex items-center gap-6 shrink-0 sm:pl-4">
-                  <div className="text-right hidden md:block">
-                    <span className="block text-xs font-semibold text-slate-900 dark:text-white">
-                      {clientTasks.length} {clientTasks.length === 1 ? 'tarefa' : 'tarefas'}
+                mark={
+                  client.logoUrl ? (
+                    <img
+                      src={client.logoUrl}
+                      alt=""
+                      className="h-10 w-10 rounded-lg object-cover border border-slate-200 dark:border-slate-700"
+                    />
+                  ) : (
+                    <span className="grid h-10 w-10 place-items-center rounded-lg bg-slate-100 dark:bg-slate-800 t-meta font-semibold text-slate-600 dark:text-slate-300">
+                      {iniciais(client.company || client.name || '?')}
                     </span>
-                    <span className="text-[11px] text-slate-400">
-                      {client.postsPerWeek ? `${client.postsPerWeek} posts/sem` : 'no fluxo'}
+                  )
+                }
+                stats={[
+                  { valor: emProducao, rotulo: 'em produção' },
+                  { valor: comCliente, rotulo: 'com o cliente', destaque: comCliente > 0 },
+                  { valor: doCliente.length, rotulo: 'pautas no total' },
+                ]}
+                footer={
+                  resumo?.temContrato ? (
+                    resumo.faltaPlanejar > 0 ? (
+                      <span className="t-meta text-amber-700 dark:text-amber-500">
+                        Falta planejar {resumo.faltaPlanejar} desta semana
+                      </span>
+                    ) : (
+                      <span className="t-meta text-emerald-700 dark:text-emerald-400">
+                        Semana planejada
+                      </span>
+                    )
+                  ) : (
+                    <span className="t-meta text-slate-400 dark:text-slate-500">
+                      Sem serviços recorrentes cadastrados
                     </span>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-xs font-medium text-slate-900 dark:text-white group-hover:translate-x-0.5 transition-transform">
-                    <span>Acessar</span>
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </div>
-                </div>
-              </div>
+                  )
+                }
+              />
             );
           })}
         </div>
-      ) : (
-        <div className="py-16 text-center space-y-4">
-          <Building className="h-8 w-8 text-slate-400 mx-auto" />
-          <h3 className="text-sm font-semibold text-slate-900 dark:text-white">Nenhum cliente encontrado</h3>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            {searchQuery ? `Nenhum resultado para "${searchQuery}".` : 'Cadastre um novo cliente ou limpe a busca.'}
-          </p>
+      )}
+
+      {criando && (
+        <FormularioCliente
+          onClose={() => setCriando(false)}
+          onSave={(dados) => {
+            const novo = addClient(dados);
+            setCriando(false);
+            // Leva direto para a pasta: um cliente recém-criado ainda precisa
+            // de estratégia, recorrência e acesso ao portal.
+            if (novo?.id) onSelectClient(novo.id);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+/* ========================================================================== */
+
+/**
+ * Cadastro em duas partes: o mínimo para existir, e o acesso ao portal.
+ *
+ * O formulário antigo pedia dez campos de uma vez. O resto mora na pasta do
+ * cliente, onde faz mais sentido preencher com calma.
+ */
+const FormularioCliente: React.FC<{
+  onClose: () => void;
+  onSave: (dados: Partial<Client>) => void;
+}> = ({ onClose, onSave }) => {
+  const [company, setCompany] = useState('');
+  const [name, setName] = useState('');
+  const [niche, setNiche] = useState('');
+  const [portalEmail, setPortalEmail] = useState('');
+  const [portalPassword, setPortalPassword] = useState('');
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!company.trim()) return;
+    onSave({
+      company: company.trim(),
+      name: name.trim() || company.trim(),
+      niche: niche.trim(),
+      portalEmail: portalEmail.trim(),
+      portalPassword: portalPassword.trim() || undefined,
+    });
+  };
+
+  const campo =
+    'w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors';
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center p-0 sm:p-6">
+      <div className="absolute inset-0 bg-slate-950/55" onClick={onClose} aria-hidden="true" />
+
+      <form
+        onSubmit={submit}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Novo cliente"
+        className="relative w-full sm:max-w-lg bg-white dark:bg-[#0f1114] sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl"
+        style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <div className="flex items-center justify-between gap-4 px-6 h-14 border-b border-slate-200 dark:border-slate-800">
+          <h2 className="font-display text-[18px] font-semibold tracking-tight text-slate-950 dark:text-white">
+            Novo cliente
+          </h2>
           <button
-            onClick={() => {
-              setSearchQuery('');
-              setShowNewClientModal(true);
-            }}
-            className="inline-flex items-center gap-2 rounded-lg bg-slate-900 text-white dark:bg-white dark:text-slate-950 px-4 py-2 text-xs font-medium cursor-pointer"
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <Plus className="h-3.5 w-3.5" />
-            <span>Cadastrar Cliente</span>
+            <X className="h-4 w-4" />
           </button>
         </div>
-      )}
 
-      {/* New Client Modal */}
-      {showNewClientModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="clean-card w-full max-w-lg p-6 md:p-8 bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 space-y-5 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200/80 dark:border-slate-800 pb-4">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                Cadastrar Novo Cliente
-              </h3>
-              <button onClick={() => setShowNewClientModal(false)} className="text-slate-400 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white">
-                <X className="h-5 w-5" />
-              </button>
+        <div className="px-6 py-6 space-y-5">
+          <div>
+            <label htmlFor="cli-company" className="block t-label text-slate-500 mb-1.5">
+              Nome da marca
+            </label>
+            <input
+              id="cli-company"
+              autoFocus
+              required
+              value={company}
+              onChange={(e) => setCompany(e.target.value)}
+              placeholder="Ex.: Perfetto Uomo"
+              className={campo}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="cli-name" className="block t-label text-slate-500 mb-1.5">
+                Contato
+              </label>
+              <input
+                id="cli-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Quem responde"
+                className={campo}
+              />
+            </div>
+            <div>
+              <label htmlFor="cli-niche" className="block t-label text-slate-500 mb-1.5">
+                Segmento
+              </label>
+              <input
+                id="cli-niche"
+                value={niche}
+                onChange={(e) => setNiche(e.target.value)}
+                placeholder="Moda masculina"
+                className={campo}
+              />
+            </div>
+          </div>
+
+          <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+            <div>
+              <p className="t-label text-slate-500">Acesso ao portal</p>
+              <p className="t-meta text-slate-400 dark:text-slate-500 mt-1">
+                Opcional agora — dá para configurar depois, na pasta do cliente.
+              </p>
             </div>
 
-            <form onSubmit={handleCreateClient} className="space-y-4 text-xs">
-              <div className="grid grid-cols-[3fr_1fr] gap-3">
-                <div>
-                  <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">Nome da Empresa</label>
-                  <input
-                    type="text"
-                    required
-                    value={company}
-                    onChange={(e) => setCompany(e.target.value)}
-                    placeholder="Ex: Boutique Donna"
-                    className="clean-input h-10 w-full px-3 text-xs font-semibold"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">Emoji</label>
-                  <input
-                    type="text"
-                    value={emoji}
-                    onChange={(e) => setEmoji(e.target.value)}
-                    maxLength={2}
-                    className="clean-input h-10 w-full text-center text-lg"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">Responsável</label>
-                  <input
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Ex: Marcela"
-                    className="clean-input h-10 w-full px-3 text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">WhatsApp</label>
-                  <input
-                    type="text"
-                    value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
-                    placeholder="(00) 00000-0000"
-                    className="clean-input h-10 w-full px-3 text-xs"
-                  />
-                </div>
-              </div>
-
-              {/* Portal Credentials Section */}
-              <div className="p-3.5 rounded-2xl bg-amber-500/[0.07] border border-amber-500/20 space-y-2.5">
-                <p className="text-[11px] font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
-                  <span>🔑</span> Acesso ao Portal do Cliente (Login & Senha)
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-300 text-[11px]">
-                      E-mail de Login
-                    </label>
-                    <input
-                      type="email"
-                      value={portalEmail}
-                      onChange={(e) => setPortalEmail(e.target.value)}
-                      placeholder={company ? `${company.toLowerCase().replace(/[^a-z0-9]/g, '')}@cliente.com` : 'cliente@dominio.com'}
-                      className="clean-input h-9 w-full px-3 text-xs bg-white dark:bg-slate-800"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-300 text-[11px]">
-                      Senha Inicial
-                    </label>
-                    <input
-                      type="text"
-                      value={portalPassword}
-                      onChange={(e) => setPortalPassword(e.target.value)}
-                      placeholder="1234"
-                      className="clean-input h-9 w-full px-3 text-xs font-mono bg-white dark:bg-slate-800"
-                    />
-                  </div>
-                </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                  O cliente usará esse e-mail e senha na tela inicial para entrar direto no portal dele.
-                </p>
-              </div>
-
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">Nicho de Atuação</label>
+                <label htmlFor="cli-portal-email" className="block t-label text-slate-500 mb-1.5">
+                  E-mail
+                </label>
                 <input
-                  type="text"
-                  value={niche}
-                  onChange={(e) => setNiche(e.target.value)}
-                  placeholder="Ex: Moda Feminina & Acessórios"
-                  className="clean-input h-10 w-full px-3 text-xs font-semibold"
+                  id="cli-portal-email"
+                  type="email"
+                  value={portalEmail}
+                  onChange={(e) => setPortalEmail(e.target.value)}
+                  placeholder="cliente@empresa.com"
+                  className={campo}
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">Plano</label>
-                  <select
-                    value={planId}
-                    onChange={(e) => setPlanId(e.target.value)}
-                    className="clean-input h-10 w-full px-3 text-xs font-semibold"
-                  >
-                    {plans.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-1 block font-semibold text-slate-700 dark:text-slate-200">Mensalidade (R$)</label>
-                  <input
-                    type="number"
-                    value={mensalidade}
-                    onChange={(e) => setMensalidade(Number(e.target.value))}
-                    className="clean-input h-10 w-full px-3 text-xs font-semibold"
-                  />
-                </div>
+              <div>
+                <label htmlFor="cli-portal-pass" className="block t-label text-slate-500 mb-1.5">
+                  Senha
+                </label>
+                <input
+                  id="cli-portal-pass"
+                  type="text"
+                  value={portalPassword}
+                  onChange={(e) => setPortalPassword(e.target.value)}
+                  placeholder="Defina uma senha"
+                  className={campo}
+                />
               </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t border-slate-200/80 dark:border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowNewClientModal(false)}
-                  className="rounded-xl border border-slate-300 dark:border-slate-700 px-4 py-2.5 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 dark:text-slate-900 text-white font-bold px-5 py-2.5 text-xs shadow-sm"
-                >
-                  Cadastrar Cliente
-                </button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
-      )}
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-200 dark:border-slate-800">
+          <Button variant="ghost" type="button" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={!company.trim()}>
+            Criar cliente
+          </Button>
+        </div>
+      </form>
     </div>
   );
 };
