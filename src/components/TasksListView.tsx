@@ -938,8 +938,8 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
 
   return (
     <div id="tasks-list-view" className="mx-auto max-w-7xl space-y-6 pb-20">
-      {/* Header Card with Filter Bar */}
-      <div className="clean-card p-6 md:p-8 space-y-5 relative z-20">
+      {/* Notion-style Clean Header with Filter Bar (No Heavy Outer Container) */}
+      <div className="space-y-5 relative z-20 pb-2">
         {/* Top title and View Mode Switcher */}
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
@@ -1289,7 +1289,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       {/* 1. LIST VIEW (Loose Excel / Notion data grid with resizable columns) */}
       {/* ========================================================================= */}
       {viewMode === 'list' && (
-        <div className={`w-full overflow-x-auto border-t border-b sm:border sm:rounded-xl border-slate-200/90 dark:border-slate-800 bg-white dark:bg-slate-900 transition-all shadow-2xs ${
+        <div className={`w-full overflow-x-auto transition-all ${
           isResizing ? 'select-none cursor-col-resize' : ''
         }`}>
           {(() => {
@@ -1314,7 +1314,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
                   <col style={{ width: '60px' }} />
                   <col className="w-auto" />
                 </colgroup>
-                <thead className="border-b border-slate-200/90 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/95 text-xs font-semibold text-slate-600 dark:text-slate-400 select-none sticky top-0 z-10 backdrop-blur-xs">
+                <thead className="border-b border-slate-200/80 dark:border-slate-800 text-xs font-semibold text-slate-500 dark:text-slate-400 select-none sticky top-0 z-10 backdrop-blur-xs">
                   <tr>
                     {visibleColumns.map((col) => {
                       let colTitle = col.label;
@@ -1639,7 +1639,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       {viewMode === 'kanban' && (
         <div className="space-y-4">
           {/* Kanban Toolbar with Hand Tool and Column Actions */}
-          <div className="flex flex-wrap items-center justify-between gap-3 clean-card p-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800">
             <div className="flex items-center gap-3">
               {/* Hand Tool Toggle Button */}
               <button

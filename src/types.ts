@@ -43,6 +43,7 @@ export type TaskStatusKey =
   | 'nao_iniciado'
   | 'aguardar'
   | 'urgencia'
+  | 'planejamento'
   | 'em_andamento'
   | 'em_aprovacao'
   | 'alterar'
@@ -75,6 +76,30 @@ export interface MonthlyReport {
   highlights?: string[]; // O que deu certo
   improvements?: string[]; // O que deve melhorar
   followersGrowth?: { label: string; value: number }[];
+}
+
+export interface ContractService {
+  id: string;
+  name: string; // e.g. "Posts de redes sociais", "Tablóide de ofertas mensal", "Stories diários"
+  frequency: 'semanal' | 'quinzenal' | 'mensal' | 'diario';
+  quantity: number; // e.g. 3
+  defaultAssigneeId?: string;
+  defaultFormat?: string; // "Post único", "Carrossel", "Reels", "Tablóide impresso", etc.
+  daysOfWeek: number[]; // 0: Dom, 1: Seg, 2: Ter, 3: Qua, 4: Qui, 5: Sex, 6: Sáb
+  active: boolean;
+}
+
+export interface Campaign {
+  id: string;
+  clientId: string;
+  title: string; // e.g. "Campanha de 15 anos - Perfetto Uomo"
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  status: 'planejamento' | 'em_producao' | 'em_aprovacao' | 'concluida' | 'pausada';
+  color?: string;
+  folderEmoji?: string;
+  createdAt: string;
 }
 
 export interface CustomService {
@@ -135,6 +160,7 @@ export interface Client {
   postsPerWeek: number;
   dueDay: number;
   contractStart?: string;
+  contractServices?: ContractService[];
   customServices?: CustomService[];
   // Deep Client Profile
   about?: string;
@@ -148,6 +174,7 @@ export interface Client {
   forbiddenWords?: string | string[];
   monthlyReports?: MonthlyReport[];
   files?: ClientFile[];
+  strategyDocument?: ClientStrategyDocument;
   portalEmail?: string;
   portalPassword?: string;
   createdAt: string;
@@ -176,7 +203,7 @@ export interface TaskActivity {
   text: string;
 }
 
-export type WorkflowStep = 'briefing' | 'headline' | 'copy' | 'arte' | 'conferencia' | 'em_aprovacao' | 'aprovado';
+export type WorkflowStep = 'briefing' | 'headline' | 'copy' | 'arte' | 'conferencia' | 'em_aprovacao' | 'aprovado' | 'producao' | 'concluido';
 export type FunnelStage = 'topo' | 'meio' | 'fundo' | 'geral';
 export type ContentChannel = 'instagram' | 'tiktok' | 'youtube' | 'linkedin' | 'facebook' | 'blog';
 
@@ -190,6 +217,7 @@ export interface TaskLiveEditing {
 export interface Task {
   id: string;
   clientId: string;
+  campaignId?: string;
   title: string;
   categoryId: string;
   assigneeId?: string; // primary assignee (for backward compatibility)
@@ -198,6 +226,8 @@ export interface Task {
   channel?: ContentChannel;
   artDate?: string;
   postDate?: string;
+  date?: string; // alias for postDate
+  format?: string;
   status: TaskStatusKey;
   driveLink?: string;
   
@@ -206,9 +236,11 @@ export interface Task {
   briefingText: string;
   headlineOptions: string[];
   selectedHeadline?: string;
+  headline?: string; // alias for selectedHeadline
   copyMode?: 'legenda' | 'carrossel' | 'roteiro' | 'none';
   caption: string;
   carouselSlides: CarouselSlide[];
+  slides?: any[]; // alias for carouselSlides
   scriptText: string;
   approvedCopySections: {
     caption?: boolean;
@@ -220,9 +252,10 @@ export interface Task {
   briefingFiles?: TaskFile[];
   timeSpent: number; // in seconds
   timerStartedAt: number | null;
-  activity: TaskActivity[];
+  activity?: TaskActivity[];
   aiChatHistory?: { id: string; role: 'user' | 'assistant'; content: string; timestamp: string }[];
   clientRequest: boolean;
+  clientFeedback?: string;
   notes?: string;
   editingBy?: TaskLiveEditing | null;
   createdAt: string;
@@ -310,3 +343,112 @@ export interface AiChatMessage {
   timestamp: string;
   appliedData?: any;
 }
+
+export interface StrategyCallout {
+  quote: string;
+  caption?: string;
+  authorOrLabel?: string;
+}
+
+export interface StrategyPortfolioItem {
+  icon?: string;
+  title: string;
+  description: string;
+  tag?: string;
+}
+
+export interface StrategyOccasion {
+  role: string;
+  description: string;
+  priority?: string;
+}
+
+export interface StrategyJourneyStep {
+  step: string;
+  name: string;
+  quote: string;
+  touchpoints: string;
+}
+
+export interface StrategyCommercialStep {
+  step: string;
+  title: string;
+  description: string;
+}
+
+export interface StrategyBottleneck {
+  title: string;
+  subtitle?: string;
+  description: string;
+}
+
+export interface StrategyKpiItem {
+  metric: string;
+  target: string;
+  frequency: string;
+  why: string;
+}
+
+export interface StrategyQuarterPlan {
+  month: string;
+  title: string;
+  focus: string;
+  actions: string[];
+}
+
+export interface StrategyResponsibilityItem {
+  category: string;
+  agency: string[];
+  client: string[];
+}
+
+export interface StrategyGlossaryItem {
+  term: string;
+  definition: string;
+}
+
+export interface StrategySwot {
+  strengths: string[];
+  weaknesses: string[];
+  opportunities: string[];
+  threats: string[];
+}
+
+export interface StrategyChapter {
+  id: string;
+  number: string; // e.g. "01", "02", ... "10"
+  tag: string; // e.g. "01 · MARCA E PÚBLICOS"
+  title: string; // e.g. "Marca e proposta de valor"
+  subtitle?: string; // e.g. "Tornar a amplitude da Emely visível..."
+  contentMarkdown?: string;
+  callout?: StrategyCallout;
+  portfolioItems?: StrategyPortfolioItem[];
+  occasions?: StrategyOccasion[];
+  journeySteps?: StrategyJourneyStep[];
+  commercialSteps?: StrategyCommercialStep[];
+  bottleneck?: StrategyBottleneck;
+  swot?: StrategySwot;
+  kpis?: StrategyKpiItem[];
+  quarterPlan?: StrategyQuarterPlan[];
+  responsibilities?: StrategyResponsibilityItem[];
+  glossary?: StrategyGlossaryItem[];
+}
+
+export interface ClientStrategyDocument {
+  id?: string;
+  title?: string;
+  subtitle?: string;
+  clientOverview?: string | { mission?: string; vision?: string; coreValues?: string[]; differential?: string; [key: string]: any };
+  targetAudience?: any;
+  cycleMeta?: string;
+  keyDecisions?: {
+    centralDecision: string;
+    positioning: string;
+    cyclePriority: string;
+  };
+  chapters?: StrategyChapter[];
+  rawText?: string;
+  updatedAt?: string;
+  [key: string]: any;
+}
+

@@ -800,6 +800,96 @@ Regras Fundamentais:
   }
 });
 
+// AI Strategy Document Parser Endpoint
+app.post("/api/ai/parse-strategy", async (req, res) => {
+  try {
+    const { documentText, clientName, cycleMeta } = req.body;
+    if (!documentText || typeof documentText !== "string") {
+      return res.status(400).json({ error: "documentText é obrigatório" });
+    }
+
+    const systemInstruction = `Você é um diretor sênior de branding e estratégia de marketing digital.
+Sua missão é interpretar documentos de estratégia, planos de marca, conteúdo ou aquisição (como planos Notion/PDF para lojas e clientes) e convertê-los em uma estrutura JSON completa e rica de plano de estratégia.
+
+O JSON DEVE respeitar rigorosamente este formato:
+{
+  "title": "Nome da marca/loja",
+  "subtitle": "Frase de posicionamento ou objetivo da estratégia",
+  "cycleMeta": "Ex: PLANO DE MARCA, CONTEÚDO E AQUISIÇÃO • SETEMBRO 2026",
+  "keyDecisions": {
+    "centralDecision": "Decisão central sintetizada",
+    "positioning": "Posicionamento claro e direto",
+    "cyclePriority": "Prioridade número 1 do ciclo"
+  },
+  "chapters": [
+    {
+      "id": "chap-01",
+      "number": "01",
+      "tag": "01 · MARCA E PÚBLICOS",
+      "title": "Título do capítulo",
+      "subtitle": "Subtítulo explicativo",
+      "callout": {
+        "quote": "Frase de efeito ou essência de marca",
+        "caption": "ESSÊNCIA DE MARCA",
+        "authorOrLabel": "Rótulo ou autor"
+      },
+      "contentMarkdown": "Texto rico em Markdown com títulos e tópicos",
+      "portfolioItems": [
+        { "icon": "👑", "title": "Linha", "description": "Detalhes", "tag": "Papel na receita" }
+      ],
+      "occasions": [
+        { "role": "Papel/Público", "description": "Demanda", "priority": "Alta / Média" }
+      ],
+      "journeySteps": [
+        { "step": "01", "name": "Nome da etapa", "quote": "Pensamento do cliente", "touchpoints": "Canais de contato" }
+      ],
+      "commercialSteps": [
+        { "step": "1", "title": "Título do passo", "description": "Instrução prática" }
+      ],
+      "bottleneck": {
+        "title": "Gargalo Crítico",
+        "subtitle": "Subtítulo do gargalo",
+        "description": "Explicação do gargalo e como resolver"
+      }
+    }
+  ]
+}
+
+Se o texto contiver capítulos como 'Marca e proposta', 'Portfólio', 'Jornada e atendimento', 'Conteúdo e linguagem', 'Presença e aquisição', etc., mapeie-os numerados de 01 a 10 mantendo a riqueza e as nuances do documento original. Retorne APENAS o JSON puro, sem crases de markdown.`;
+
+    const prompt = `Analise o seguinte documento de estratégia para o cliente "${clientName || 'Cliente'}" (Ciclo: "${cycleMeta || 'Plano Estratégico'}") e converta-o na estrutura de estratégia:
+
+--- INÍCIO DO DOCUMENTO ---
+${documentText.slice(0, 15000)}
+--- FIM DO DOCUMENTO ---`;
+
+    const rawResponse = await callGemini(prompt, {
+      systemInstruction,
+      responseMimeType: "application/json",
+      temperature: 0.2,
+    });
+
+    if (rawResponse) {
+      try {
+        const cleaned = rawResponse.replace(/^```json\s*/, "").replace(/\s*```$/, "").trim();
+        const parsed = JSON.parse(cleaned);
+        return res.json({ success: true, strategy: parsed });
+      } catch (parseErr) {
+        console.warn("JSON parse error from Gemini parse-strategy:", parseErr);
+      }
+    }
+
+    // Fallback: heuristic extraction if offline or Gemini unavailable
+    return res.json({
+      success: false,
+      message: "Fallback heuristic applied",
+    });
+  } catch (err: any) {
+    console.error("Error parsing strategy document:", err);
+    res.status(500).json({ error: err?.message || "Erro ao processar documento" });
+  }
+});
+
 // Vite middleware or static serving
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

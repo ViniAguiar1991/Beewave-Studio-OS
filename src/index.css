@@ -14,17 +14,17 @@
     --color-cool-steel: #94a3b8;
     --color-coral-alert: #e3655b;
 
-    /* Distinct Soft Light Canvas with Ambient Contrast (Not Pure White) */
-    --bg-page-gradient: linear-gradient(180deg, #edf2f7 0%, #f1f5f9 50%, #e8eef5 100%);
+    /* Distinct Soft Light Canvas with Ambient Contrast (Crisp, pure, luminous canvas) */
+    --bg-page-gradient: #fbfcfd;
     
     /* Clean Minimalist Containers (Light) */
-    --bg-card-glass: rgba(255, 255, 255, 0.92);
+    --bg-card-glass: #ffffff;
     --bg-card-glass-hover: #ffffff;
-    --bg-card-subtle-glass: rgba(248, 250, 252, 0.85);
-    --border-glass: rgba(203, 213, 225, 0.7);
-    --border-glass-subtle: rgba(226, 232, 240, 0.8);
-    --shadow-glass: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
-    --shadow-glass-hover: 0 4px 12px -2px rgba(15, 23, 42, 0.06);
+    --bg-card-subtle-glass: #f8fafc;
+    --border-glass: rgba(226, 232, 240, 0.7);
+    --border-glass-subtle: rgba(241, 245, 249, 0.8);
+    --shadow-glass: 0 1px 2px 0 rgba(15, 23, 42, 0.02);
+    --shadow-glass-hover: 0 2px 6px -1px rgba(15, 23, 42, 0.03);
     
     --text-primary: #0f172a;
     --text-secondary: #334155;

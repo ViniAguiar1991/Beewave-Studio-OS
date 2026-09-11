@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   LayoutDashboard,
   ListChecks,
+  FolderKanban,
   Users,
   Building2,
   CalendarDays,
@@ -62,6 +63,7 @@ export const SidebarRail: React.FC<SidebarRailProps> = ({
   const rawNavItems: NavItem[] = [
     { id: 'inicio', label: 'Início', icon: LayoutDashboard },
     { id: 'tarefas', label: 'Tarefas', icon: ListChecks, perm: 'tarefas' },
+    { id: 'campanhas', label: 'Campanhas', icon: FolderKanban, perm: 'tarefas' },
     { id: 'clientes', label: 'Clientes', icon: Building2, perm: 'clientes' },
     { id: 'colaboradores', label: 'Equipe & Colaboradores', icon: Users, perm: 'clientes' },
     { id: 'prompts', label: 'Prompts & Notas', icon: FileText, perm: 'prompts' },

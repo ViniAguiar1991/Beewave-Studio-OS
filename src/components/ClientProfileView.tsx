@@ -28,6 +28,7 @@ import { formatDate } from '../utils/dateUtils';
 import { compressImage } from '../utils/imageCompressor';
 import { MonthlyReport } from '../types';
 import { getStatusLabel } from '../utils/badgeStyles';
+import { ClientRecurrenceTab } from './ClientRecurrenceTab';
 
 interface ClientProfileViewProps {
   clientId: string;
@@ -84,10 +85,10 @@ export const ClientProfileView: React.FC<ClientProfileViewProps> = ({
     return `${seconds}s`;
   };
 
-  const [activeTab, setActiveTab] = useState<'sobre' | 'relatorios' | 'cadastro' | 'financeiro' | 'arquivos' | 'tarefas' | 'portal'>(() => {
+  const [activeTab, setActiveTab] = useState<'sobre' | 'relatorios' | 'cadastro' | 'financeiro' | 'arquivos' | 'tarefas' | 'portal' | 'recorrencia'>(() => {
     try {
       const saved = localStorage.getItem('beewave_client_subtab');
-      if (saved && ['sobre', 'relatorios', 'cadastro', 'financeiro', 'arquivos', 'tarefas', 'portal'].includes(saved)) {
+      if (saved && ['sobre', 'relatorios', 'cadastro', 'financeiro', 'arquivos', 'tarefas', 'portal', 'recorrencia'].includes(saved)) {
         return saved as any;
       }
     } catch {}
@@ -595,6 +596,7 @@ export const ClientProfileView: React.FC<ClientProfileViewProps> = ({
           <div className="flex items-center gap-6 border-t border-slate-200/80 dark:border-slate-800 pt-2 overflow-x-auto">
             {[
               { key: 'sobre', label: 'Diretrizes de Marca' },
+              { key: 'recorrencia', label: `Recorrência (${client.contractServices?.length || 0})` },
               { key: 'portal', label: '🔑 Acesso ao Portal' },
               { key: 'relatorios', label: `Relatórios (${client.monthlyReports?.length || 0})` },
               { key: 'tarefas', label: `Tarefas (${tasks.length})` },
@@ -1554,6 +1556,11 @@ export const ClientProfileView: React.FC<ClientProfileViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* TAB: RECORRÊNCIA & AUTOMAÇÃO DE PAUTAS */}
+      {activeTab === 'recorrencia' && (
+        <ClientRecurrenceTab client={client} />
       )}
 
       {/* New Report Modal */}

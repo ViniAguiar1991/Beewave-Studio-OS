@@ -15,6 +15,7 @@ import { TaskWorkflowModal } from './components/TaskWorkflowModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { GlobalTimerWidget } from './components/GlobalTimerWidget';
 import { TrashView } from './components/TrashView';
+import { CampaignsView } from './components/CampaignsView';
 import { LogIn, Sparkles, ShieldCheck, Eye, EyeOff, UserCheck, AlertCircle, LogOut } from 'lucide-react';
 
 export function App() {
@@ -28,7 +29,7 @@ export function App() {
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
       const savedTab = localStorage.getItem('beewave_active_tab');
-      if (savedTab && ['inicio', 'tarefas', 'clientes', 'colaboradores', 'calendario', 'prompts', 'lixeira', 'admin', 'portal'].includes(savedTab)) {
+      if (savedTab && ['inicio', 'tarefas', 'campanhas', 'clientes', 'colaboradores', 'calendario', 'prompts', 'lixeira', 'admin', 'portal'].includes(savedTab)) {
         return savedTab;
       }
     } catch {}
@@ -299,44 +300,22 @@ export function App() {
 
   return (
     <div className="min-h-screen flex text-slate-800 dark:text-slate-100 relative selection:bg-slate-900 selection:text-white dark:selection:bg-white dark:selection:text-slate-900">
-      {/* Code-built Ambient Soft Gray Mesh Background Layers */}
-      <div className="bg-mesh-ribbons" aria-hidden="true">
-        <svg className="w-full h-full object-cover scale-105" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
-          {/* Top-Right Soft Slate Glow Orb */}
-          <circle cx="1150" cy="180" r="320" fill="url(#paint_circle_1)" opacity="0.65" filter="blur(65px)" />
-          {/* Bottom-Left Ambient Gray Orb */}
-          <circle cx="280" cy="720" r="380" fill="url(#paint_circle_2)" opacity="0.6" filter="blur(75px)" />
-          {/* Center Dynamic Fluid Ribbons */}
-          <path d="M-80 320 C 280 520, 520 -20, 980 320 C 1280 540, 1480 200, 1600 380" stroke="url(#paint0_linear)" strokeWidth="140" strokeLinecap="round" opacity="0.65" filter="blur(45px)"/>
-          <path d="M120 780 C 420 520, 780 880, 1220 500 C 1420 340, 1580 620, 1700 520" stroke="url(#paint1_linear)" strokeWidth="180" strokeLinecap="round" opacity="0.55" filter="blur(55px)"/>
-          <path d="M400 120 C 700 380, 1050 80, 1380 420" stroke="url(#paint2_linear)" strokeWidth="90" strokeLinecap="round" opacity="0.45" filter="blur(35px)"/>
+      {/* Code-built Ambient Soft Light Background */}
+      <div className="bg-mesh-ribbons pointer-events-none" aria-hidden="true">
+        <svg className="w-full h-full object-cover" viewBox="0 0 1440 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+          {/* Subtle luminous ambient gradient glow */}
+          <circle cx="1200" cy="150" r="350" fill="url(#paint_circle_1)" opacity="0.25" filter="blur(80px)" />
+          <circle cx="200" cy="750" r="300" fill="url(#paint_circle_2)" opacity="0.15" filter="blur(80px)" />
 
           <defs>
-            <radialGradient id="paint_circle_1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1150 180) rotate(90) scale(320)">
-              <stop stopColor="#cbd5e1" stopOpacity="0.9"/>
-              <stop offset="0.7" stopColor="#94a3b8" stopOpacity="0.4"/>
-              <stop offset="1" stopColor="#64748b" stopOpacity="0"/>
+            <radialGradient id="paint_circle_1" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1200 150) rotate(90) scale(350)">
+              <stop stopColor="#e2e8f0" stopOpacity="0.6"/>
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0"/>
             </radialGradient>
-            <radialGradient id="paint_circle_2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(280 720) rotate(90) scale(380)">
-              <stop stopColor="#94a3b8" stopOpacity="0.6"/>
-              <stop offset="0.6" stopColor="#cbd5e1" stopOpacity="0.3"/>
-              <stop offset="1" stopColor="#e2e8f0" stopOpacity="0"/>
+            <radialGradient id="paint_circle_2" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(200 750) rotate(90) scale(300)">
+              <stop stopColor="#f1f5f9" stopOpacity="0.6"/>
+              <stop offset="1" stopColor="#ffffff" stopOpacity="0"/>
             </radialGradient>
-            <linearGradient id="paint0_linear" x1="0" y1="100" x2="1400" y2="500" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#94a3b8" stopOpacity="0.8"/>
-              <stop offset="0.45" stopColor="#cbd5e1" stopOpacity="0.75"/>
-              <stop offset="1" stopColor="#e2e8f0" stopOpacity="0.4"/>
-            </linearGradient>
-            <linearGradient id="paint1_linear" x1="100" y1="800" x2="1600" y2="400" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#64748b" stopOpacity="0.5"/>
-              <stop offset="0.5" stopColor="#94a3b8" stopOpacity="0.7"/>
-              <stop offset="1" stopColor="#cbd5e1" stopOpacity="0.25"/>
-            </linearGradient>
-            <linearGradient id="paint2_linear" x1="400" y1="120" x2="1380" y2="420" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#e2e8f0" stopOpacity="0.9"/>
-              <stop offset="0.5" stopColor="#cbd5e1" stopOpacity="0.5"/>
-              <stop offset="1" stopColor="#94a3b8" stopOpacity="0.1"/>
-            </linearGradient>
           </defs>
         </svg>
       </div>
@@ -389,7 +368,7 @@ export function App() {
         </header>
 
         {/* Dynamic Route Content */}
-        <main className="flex-1 p-5 md:p-10 pt-5 md:pt-10">
+        <main className="flex-1 p-4 sm:p-6 md:p-10 pt-4 md:pt-10 pb-28 md:pb-12 min-w-0">
           {currentTab === 'inicio' && (
             <DashboardHome
               onSelectTask={(tId) => setActiveWorkflowTaskId(tId)}
@@ -416,6 +395,17 @@ export function App() {
               onOpenTrash={() => {
                 setSelectedClientId(null);
                 setCurrentTab('lixeira');
+              }}
+            />
+          )}
+
+          {currentTab === 'campanhas' && (
+            <CampaignsView
+              onSelectTask={(tId) => setActiveWorkflowTaskId(tId)}
+              onNewTaskForCampaign={(campId, cId) => handleOpenNewTask({ campaignId: campId, clientId: cId })}
+              onSelectClient={(cId) => {
+                setSelectedClientId(cId);
+                setCurrentTab('clientes');
               }}
             />
           )}

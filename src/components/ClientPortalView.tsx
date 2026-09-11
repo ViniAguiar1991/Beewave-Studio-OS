@@ -35,6 +35,10 @@ import { Task, MonthlyReport } from '../types';
 import { formatDate } from '../utils/dateUtils';
 import { formatFriendlyDate, formatStandardDate, formatFullBadgeDate } from '../utils/dateFormatter';
 import { getFormatLabel } from '../utils/badgeStyles';
+import { ClientPortalHeader } from './client-portal/ClientPortalHeader';
+import { ClientStrategyTab } from './client-portal/ClientStrategyTab';
+import { ClientApprovalTab } from './client-portal/ClientApprovalTab';
+import { ClientSuggestionsTab } from './client-portal/ClientSuggestionsTab';
 
 interface ClientPortalViewProps {
   initialClientId?: string | null;
@@ -62,6 +66,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const clientApprove = useAppStore((s) => s.clientApprove);
   const clientRequestChange = useAppStore((s) => s.clientRequestChange);
   const clientRequestMultipleChanges = useAppStore((s) => s.clientRequestMultipleChanges);
+  const updateClientStrategy = useAppStore((s) => s.updateClientStrategy);
   const logout = useAppStore((s) => s.logout);
 
   const effectiveClientId = isClientLocked
@@ -69,14 +74,19 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     : (initialClientId || clients[0]?.id || '');
 
   const [selectedClientId, setSelectedClientId] = useState<string>(effectiveClientId);
-  const [activePortalTab, setActivePortalTab] = useState<'planejamento' | 'sugestoes' | 'perfil' | 'relatorios'>(() => {
+  const [activePortalTab, setActivePortalTab] = useState<
+    'estrategia' | 'aprovacao' | 'planejamento' | 'sugestoes' | 'perfil' | 'relatorios'
+  >(() => {
     try {
       const saved = localStorage.getItem('beewave_portal_tab');
-      if (saved && ['planejamento', 'sugestoes', 'perfil', 'relatorios'].includes(saved)) {
+      if (
+        saved &&
+        ['estrategia', 'aprovacao', 'planejamento', 'sugestoes', 'perfil', 'relatorios'].includes(saved)
+      ) {
         return saved as any;
       }
     } catch {}
-    return 'planejamento';
+    return 'estrategia';
   });
 
   React.useEffect(() => {
@@ -418,167 +428,57 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
       {/* Noise Texture Overlay */}
       <div className="fixed inset-0 pointer-events-none bg-noise z-0 opacity-80" aria-hidden="true" />
 
-      {/* Top Floating App Bar */}
-      <div className="relative z-10 mx-auto max-w-6xl px-4 md:px-8 pt-6">
-        <div className="clean-card px-5 py-3 flex items-center justify-between shadow-sm backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
-          {isClientLocked ? (
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-7 w-7 place-items-center rounded-lg bg-amber-500 text-slate-950 font-black text-xs shadow-sm">
-                BW
-              </span>
-              <div>
-                <p className="text-xs font-bold text-slate-900 dark:text-white leading-tight">
-                  Portal do Cliente
-                </p>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                  {currentClient?.company}
-                </p>
-              </div>
-            </div>
-          ) : (
-            <button
-              id="btn-back-from-portal"
-              onClick={onBackToApp}
-              className="flex items-center gap-2 text-xs font-bold text-slate-700 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span>Voltar ao Studio</span>
-            </button>
-          )}
+      {/* Facebook-style Modern Profile Header (Cover, Avatar, Bio, Verified Badge, Tabs & Controls) */}
+      <ClientPortalHeader
+        client={currentClient}
+        allClients={clients}
+        activeTab={activePortalTab}
+        onSelectTab={(tab) => setActivePortalTab(tab)}
+        pendingApprovalsCount={pendingApprovalTasks.length}
+        isClientLocked={isClientLocked}
+        onBackToApp={onBackToApp}
+        onLogout={() => {
+          if (onLogout) onLogout();
+          else logout();
+        }}
+        onSwitchClient={(clientId) => {
+          setSelectedClientId(clientId);
+          handleCloseModal();
+        }}
+        onSuggestIdea={() => setActivePortalTab('sugestoes')}
+      />
 
-          {/* Right Controls: If locked, show logout button; If studio preview, show client dropdown */}
-          <div className="flex items-center gap-3 text-xs">
-            {isClientLocked ? (
-              <button
-                id="btn-portal-logout"
-                onClick={() => {
-                  if (onLogout) onLogout();
-                  else logout();
-                }}
-                className="flex items-center gap-1.5 rounded-xl border border-rose-200 dark:border-rose-800/60 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/50 px-3 py-1.5 font-bold transition-all cursor-pointer"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                <span>Sair</span>
-              </button>
-            ) : (
-              <>
-                <span className="text-slate-500 dark:text-slate-400 font-medium hidden sm:inline">
-                  Visualizar como:
-                </span>
-                <select
-                  id="select-portal-client"
-                  value={selectedClientId}
-                  onChange={(e) => {
-                    setSelectedClientId(e.target.value);
-                    handleCloseModal();
-                  }}
-                  className="clean-input h-8 px-3 text-xs font-bold cursor-pointer bg-slate-50 dark:bg-slate-800 border-slate-300 dark:border-slate-600 rounded-lg"
-                >
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.emoji} {c.company}
-                    </option>
-                  ))}
-                </select>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Main Facebook-Style Profile Card with Banner and Overlapping Logo */}
-      <div className="relative z-10 mx-auto max-w-6xl px-4 md:px-8 mt-6 space-y-8">
-        <div className="clean-card overflow-hidden bg-white/95 dark:bg-slate-900/95 border border-slate-200/80 dark:border-slate-800 shadow-md">
-          {/* Banner with generous height & clean background */}
-          <div className="relative h-44 sm:h-56 md:h-64 w-full bg-gradient-to-r from-slate-200 via-slate-100 to-slate-200 dark:from-slate-800 dark:via-slate-900 dark:to-slate-800 overflow-hidden border-b border-slate-200/80 dark:border-slate-800">
-            {currentClient?.bannerUrl ? (
-              <img
-                src={currentClient.bannerUrl}
-                alt="Banner"
-                style={{
-                  objectPosition: `center ${currentClient.bannerPositionY ?? 50}%`,
-                }}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="absolute inset-0 flex items-center justify-center opacity-30">
-                <span className="text-2xl font-black tracking-widest uppercase text-slate-400">
-                  {currentClient?.company}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Profile Header Bar with Ample Breathing Room */}
-          <div className="px-6 sm:px-8 pb-6 pt-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 -mt-14 sm:-mt-18 mb-6">
-              <div className="flex items-start sm:items-center gap-5">
-                {/* Avatar with clean white/dark ring */}
-                <div className="relative grid h-22 w-22 sm:h-28 sm:w-28 shrink-0 place-items-center rounded-2xl border-4 border-white dark:border-slate-900 bg-white dark:bg-slate-800 shadow-xl overflow-hidden text-3xl z-10">
-                  {currentClient?.logoUrl ? (
-                    <img
-                      src={currentClient.logoUrl}
-                      alt={currentClient.company}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <span>{currentClient?.emoji || '🏢'}</span>
-                  )}
-                </div>
-
-                {/* Company Name & Details - Safely placed with ample breathing room */}
-                <div className="space-y-1.5 pt-2 sm:pt-14">
-                  <h1 className="text-xl sm:text-2xl md:text-3xl font-extrabold font-display text-slate-900 dark:text-white tracking-tight">
-                    {currentClient?.company}
-                  </h1>
-                  <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 font-medium">
-                    {currentClient?.name} • Portal de Acompanhamento e Aprovação
-                  </p>
-                </div>
-              </div>
-
-              {/* Status Pills */}
-              <div className="flex items-center gap-2 pt-2 sm:pt-14">
-                <span className="rounded-xl bg-slate-100 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 px-3.5 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shadow-2xs">
-                  {clientTasks.length} pautas cadastradas
-                </span>
-              </div>
-            </div>
-
-            {/* Portal Navigation Tabs (Planejamento, Perfil, Relatórios Mensais) */}
-            <div className="flex items-center gap-3 sm:gap-8 border-t border-slate-200/80 dark:border-slate-800 pt-4 overflow-x-auto">
-              {[
-                { key: 'planejamento', label: 'Planejamento', icon: CalendarIcon },
-                { key: 'perfil', label: 'Perfil da Marca', icon: FileText },
-                { key: 'relatorios', label: 'Relatórios Mensais', icon: BarChart3 },
-              ].map((tab) => {
-                const Icon = tab.icon;
-                const isActive = activePortalTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    id={`tab-portal-${tab.key}`}
-                    onClick={() => setActivePortalTab(tab.key as any)}
-                    className={`flex items-center gap-2 pb-3.5 px-1 text-xs font-bold transition-all relative cursor-pointer whitespace-nowrap ${
-                      isActive
-                        ? 'text-slate-900 dark:text-white'
-                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{tab.label}</span>
-                    {isActive && (
-                      <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-slate-900 dark:bg-white rounded-full" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+      {/* Main Notion-like Content Canvas (Without Excess Containers) */}
+      <main className="relative z-10 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+        {/* ========================================================================= */}
+        {/* TAB 1: ESTRATÉGIA (NOTION-STYLE CLEAN DOCUMENT CANVAS & IMPORT) */}
+        {/* ========================================================================= */}
+        {activePortalTab === 'estrategia' && (
+          <ClientStrategyTab
+            currentClient={currentClient}
+            onUpdateStrategy={(strat) => updateClientStrategy(currentClient.id, strat)}
+          />
+        )}
 
         {/* ========================================================================= */}
-        {/* TAB 1: PLANEJAMENTO (CALENDÁRIO & LISTA + APROVAÇÕES PENDENTES) */}
+        {/* TAB 2: POSTS PARA APROVAÇÃO (CENTRAL DE APROVAÇÕES) */}
+        {/* ========================================================================= */}
+        {activePortalTab === 'aprovacao' && (
+          <ClientApprovalTab
+            tasks={tasks}
+            currentClient={currentClient}
+            onApproveTask={(taskId) => {
+              clientApprove(taskId, currentClient?.company || 'Cliente');
+            }}
+            onRequestAdjustments={(taskId, feedback) => {
+              clientRequestChange(taskId, currentClient?.company || 'Cliente', feedback);
+            }}
+            onOpenTaskDetails={(task) => handleOpenTask(task, 'conteudo')}
+          />
+        )}
+
+        {/* ========================================================================= */}
+        {/* TAB 3: PLANEJAMENTO (CALENDÁRIO & LISTA + APROVAÇÕES PENDENTES) */}
         {/* ========================================================================= */}
         {activePortalTab === 'planejamento' && (
           <div className="space-y-6">
@@ -799,9 +699,9 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                   Todas ({clientTasks.length})
                 </button>
                 <button
-                  onClick={() => setStatusFilter('pendentes')}
+                  onClick={() => setStatusFilter('em_aprovacao')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    statusFilter === 'pendentes'
+                    statusFilter === 'em_aprovacao'
                       ? 'bg-sky-600 text-white shadow-2xs'
                       : 'bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
                   }`}
@@ -821,9 +721,9 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
                   <span>Ajustes Solicitados ({changeRequestedTasks.length})</span>
                 </button>
                 <button
-                  onClick={() => setStatusFilter('aprovadas')}
+                  onClick={() => setStatusFilter('aprovado')}
                   className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                    statusFilter === 'aprovadas'
+                    statusFilter === 'aprovado'
                       ? 'bg-emerald-600 text-white shadow-2xs'
                       : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                   }`}
@@ -1347,7 +1247,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
             )}
           </div>
         )}
-      </div>
+      </main>
 
       {/* ========================================================================= */}
       {/* TASK INSPECTION & ADJUSTMENT WORKFLOW MODAL */}

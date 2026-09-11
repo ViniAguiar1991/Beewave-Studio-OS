@@ -32,7 +32,11 @@ import {
   AdminSystemPrompts,
   TaskLiveEditing,
   TableViewConfig,
+  ClientStrategyDocument,
+  Campaign,
+  ContractService,
 } from './types';
+import { EMELY_STRATEGY_DOCUMENT } from './data/emelyStrategy';
 
 export const DEFAULT_ADMIN_PROMPTS: AdminSystemPrompts = {
   headlinePrompt: `Você é um estrategista sênior de marketing digital e copywriter premiado.
@@ -184,9 +188,56 @@ export const DEFAULT_USERS: User[] = [
     color: '#10b981',
     permissions: {},
   },
+  {
+    id: 'u_cli_emely',
+    name: 'Emely Moda Festa',
+    email: 'emely@cliente.com',
+    password: '1234',
+    phone: '(54) 99871-5500',
+    role: 'cliente',
+    clientId: 'c_emely',
+    color: '#059669',
+    permissions: {},
+  },
 ];
 
 export const DEFAULT_CLIENTS: Client[] = [
+  {
+    id: 'c_emely',
+    company: 'Emely Moda Festa',
+    name: 'Emely Oliveira',
+    email: 'contato@emelymodafesta.com.br',
+    portalEmail: 'emely@cliente.com',
+    portalPassword: '1234',
+    whatsapp: '(54) 99871-5500',
+    cnpj: '24.551.902/0001-83',
+    city: 'Caxias do Sul',
+    country: 'Brasil',
+    instagram: '@emelymodafesta',
+    site: 'emelymodafesta.com.br',
+    emoji: '👗',
+    planId: 'plan_prem',
+    mensalidade: 3200,
+    postsPerWeek: 7,
+    dueDay: 15,
+    contractStart: '2025-01-10',
+    bannerUrl: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=80',
+    logoUrl: 'https://images.unsplash.com/photo-1594552072238-b8a33785b261?auto=format&fit=crop&w=400&q=80',
+    about: 'Loja especializada em vestidos de noiva, debutantes, moda festa feminina, ternos masculinos e trajes a rigor para toda a família.',
+    niche: 'Vestidos de Noiva, Festas & Trajes a Rigor',
+    targetAudience: 'Noivas, madrinhas, debutantes, formandas e familiares que buscam atendimento acolhedor, modelagem sob medida e elegância sem inacessibilidade.',
+    persona: 'Carolina, 27 anos, noiva, procura um vestido que valorize seu corpo sem estourar o orçamento do casamento.',
+    toneOfVoice: ['Elegante', 'Acolhedor', 'Empático', 'Claro e Transparente'],
+    toneOfVoiceTags: ['Sofisticado / Elegante', 'Acolhedor / Empático', 'Acessível / Claro', 'Celebrativo / Emocional'],
+    toneOfVoiceCustom: 'Comunicar com elegância e proximidade. Falar de momentos únicos, caimento real e segurança para o grande dia.',
+    recommendedWords: 'vestido de noiva, caimento impecável, momento especial, prova dos sonhos, ateliê próprio, alta costura, moda festa, padrinhos',
+    forbiddenWords: 'vestidinho barato, promoção bizarra, tecido descartável, qualquer um usa, sobra de estoque',
+    strategyDocument: EMELY_STRATEGY_DOCUMENT,
+    createdAt: '2025-01-10',
+    files: [
+      { id: 'f-emely-1', name: 'Plano_Estrategico_Emely_2026.pdf', type: 'application/pdf', size: 1840000, dataUrl: '', uploadedAt: '2026-09-01' }
+    ]
+  },
   {
     id: 'c_zaffari',
     company: 'Cafeteria Grão Nobre',
@@ -379,10 +430,616 @@ export const DEFAULT_CLIENTS: Client[] = [
     ],
     createdAt: '2025-06-10',
     files: []
+  },
+  {
+    id: 'c_perfetto',
+    company: 'Perfetto Uomo',
+    name: 'Branca',
+    email: 'contato@perfettouomo.com.br',
+    portalEmail: 'perfetto@cliente.com',
+    portalPassword: '1234',
+    whatsapp: '(54) 99611-8822',
+    cnpj: '12.345.678/0001-90',
+    city: 'Caxias do Sul',
+    country: 'Brasil',
+    instagram: '@perfettouomo',
+    site: 'perfettouomo.com.br',
+    emoji: '👔',
+    planId: 'plan_prem',
+    mensalidade: 3500,
+    postsPerWeek: 3,
+    dueDay: 10,
+    contractStart: '2025-01-01',
+    bannerUrl: 'https://images.unsplash.com/photo-1490578474895-699cd4e2cf59?auto=format&fit=crop&w=1200&q=80',
+    logoUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=300&q=80',
+    about: 'Alfaiataria masculina contemporânea, trajes sob medida e peças casuais de alto padrão para homens sofisticados.',
+    niche: 'Moda Masculina & Alfaiataria',
+    targetAudience: 'Homens de 28 a 60 anos que buscam caimento impecável, conforto e elegância no trabalho e em celebrações.',
+    persona: 'Rodrigo, 35 anos, empresário, valoriza corte sob medida e praticidade sem perder a elegância refinada.',
+    toneOfVoice: ['Sofisticado', 'Seguro', 'Inspirador', 'Acolhedor'],
+    toneOfVoiceTags: ['Sofisticado / Elegante', 'Autoridade / Especialista', 'Direto / Seguro'],
+    toneOfVoiceCustom: 'Transmitir elegância atemporal, caimento que acompanha o movimento e segurança pessoal.',
+    recommendedWords: 'elegância, caimento impecável, alfaiataria contemporânea, presença marcante, tecido nobre, sob medida',
+    forbiddenWords: 'roupa barata, promoção imperdível, terno qualquer, promoção relâmpago',
+    contractServices: [
+      {
+        id: 'srv-perf-1',
+        name: 'Posts de redes sociais',
+        frequency: 'semanal',
+        quantity: 3,
+        defaultAssigneeId: 'u_joao',
+        defaultFormat: 'Post único',
+        daysOfWeek: [1, 3, 5],
+        active: true,
+      }
+    ],
+    strategyDocument: {
+      clientOverview: {
+        mission: 'Vestir o homem contemporâneo com presença, elegância e segurança sob medida.',
+        vision: 'Ser a principal referência em alfaiataria premium e moda masculina da serra gaúcha.',
+        coreValues: ['Caimento impecável', 'Atendimento consultivo', 'Materiais nobres', 'Elegância discreta'],
+        differential: 'Consultoria de estilo sob medida com ateliê próprio de ajustes e acervo premium.'
+      },
+      targetAudience: {
+        demographics: 'Homens de 28 a 60 anos, empresários, executivos, noivos e formandos.',
+        behavior: 'Valorizam tempo, qualidade percebida e buscam aconselhamento profissional de imagem.',
+        painPoints: ['Dificuldade de encontrar roupas prontas com caimento perfeito', 'Medo de errar no dress code em eventos importantes'],
+        desires: ['Sentir-se confiante e elegante sem esforço aparente', 'Ter peças versáteis que durem anos']
+      },
+      voiceAndTone: {
+        personality: ['Seguro', 'Sofisticado', 'Acolhedor', 'Consultivo'],
+        guidelines: 'Fale de estilo como uma extensão da personalidade, nunca como imposição ou ostentação vazia.',
+        dos: ['Exaltar texturas, tecidos nobres e acabamentos artesanais', 'Inspirar combinações inteligentes para trabalho e eventos'],
+        donts: ['Usar apelo de preço baixo ou liquidacionismo agressivo', 'Linguagem excessivamente juvenil ou gírias da moda']
+      },
+      contentPillars: [
+        { name: 'Elegância e Caimento', percentage: 40, description: 'Detalhes de alfaiataria, cortes sob medida e tecidos nobres.' },
+        { name: 'Ocasiões e Estilo', percentage: 30, description: 'Guia de trajes para casamentos, formaturas e negócios.' },
+        { name: 'Bastidores e Atendimento', percentage: 20, description: 'Consultoria da equipe, ajustes ao vivo e cuidado com o cliente.' },
+        { name: '15 Anos Perfetto', percentage: 10, description: 'Histórias, clientes marcantes e celebrações com a comunidade.' }
+      ],
+      goals: [
+        { metric: 'Agendamentos de consultoria', target: '45/mês', current: '38/mês' },
+        { metric: 'Engajamento em carrosséis', target: '5.2%', current: '4.8%' },
+        { metric: 'Visualizações de vídeos de prova', target: '25.000', current: '21.400' }
+      ]
+    },
+    createdAt: '2025-01-01',
+    files: []
+  },
+  {
+    id: 'c_melatti',
+    company: 'Melatti Cosméticos',
+    name: 'Camila Melatti',
+    email: 'contato@melatticosmeticos.com.br',
+    portalEmail: 'melatti@cliente.com',
+    portalPassword: '1234',
+    whatsapp: '(54) 99122-3344',
+    cnpj: '98.765.432/0001-11',
+    city: 'Caxias do Sul',
+    country: 'Brasil',
+    instagram: '@melatticosmeticos',
+    site: 'melatticosmeticos.com.br',
+    emoji: '✨',
+    planId: 'plan_prem',
+    mensalidade: 4200,
+    postsPerWeek: 4,
+    dueDay: 15,
+    contractStart: '2025-02-01',
+    bannerUrl: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=1200&q=80',
+    logoUrl: 'https://images.unsplash.com/photo-1571781926291-c477ebfd024b?auto=format&fit=crop&w=300&q=80',
+    about: 'Rede especializada em cosméticos, perfumaria premium e dermocosméticos, com tablóide mensal de ofertas especiais.',
+    niche: 'Beleza, Cosméticos & Cuidados Pessoais',
+    targetAudience: 'Consumidores de dermocosméticos, profissionais da estética e amantes de autocuidado.',
+    persona: 'Mariana, 32 anos, busca produtos dermatológicos comprovados com bom custo-benefício e orientação confiável.',
+    toneOfVoice: ['Acolhedor', 'Científico Acessível', 'Vibrante', 'Confiável'],
+    toneOfVoiceTags: ['Acolhedor / Empático', 'Técnico / Especialista', 'Acessível / Claro'],
+    toneOfVoiceCustom: 'Explicar os benefícios reais de cada fórmula de forma simples e incentivar o autocuidado diário.',
+    recommendedWords: 'autocuidado, pele saudável, hidratação profunda, dermocosméticos, ofertas exclusivas, bem-estar',
+    forbiddenWords: 'milagre instantâneo, fórmula mágica, produto barato demais',
+    contractServices: [
+      {
+        id: 'srv-mel-1',
+        name: 'Posts de redes sociais',
+        frequency: 'semanal',
+        quantity: 4,
+        defaultAssigneeId: 'u_joao',
+        defaultFormat: 'Post único',
+        daysOfWeek: [1, 2, 4, 5],
+        active: true,
+      },
+      {
+        id: 'srv-mel-2',
+        name: 'Tablóide de ofertas mensal',
+        frequency: 'mensal',
+        quantity: 1,
+        defaultAssigneeId: 'u_admin',
+        defaultFormat: 'Tablóide impresso',
+        daysOfWeek: [1],
+        active: true,
+      }
+    ],
+    strategyDocument: {
+      clientOverview: {
+        mission: 'Proporcionar saúde da pele e autoestima por meio da melhor seleção em dermocosméticos e perfumaria.',
+        vision: 'Ser a rede de cosméticos mais querida e recomendada da região.',
+        coreValues: ['Cuidado autêntico', 'Transparência nas fórmulas', 'Atendimento especialista', 'Preço justo'],
+        differential: 'Equipe com farmacêuticos e consultores dermocosméticos treinados em loja física e suporte no WhatsApp.'
+      },
+      targetAudience: {
+        demographics: 'Mulheres e homens de 22 a 55 anos interessados em skincare e cuidados com o cabelo.',
+        behavior: 'Pesquisam ativos (ácido hialurônico, vitamina C) e buscam promoções no tablóide mensal.',
+        painPoints: ['Dúvida de como montar rotina de skincare sem gastar muito', 'Sensibilidade cutânea a cosméticos agressivos'],
+        desires: ['Pele viçosa e saudável com produtos recomendados por especialistas']
+      },
+      voiceAndTone: {
+        personality: ['Didático', 'Acolhedor', 'Científico sem complicação', 'Animado'],
+        guidelines: 'Incentive a consistência nos cuidados diários. Mostre como ler rótulos e aplicar os produtos corretamente.',
+        dos: ['Destacar ativos e textura dos produtos', 'Avisar sobre as datas especiais do tablóide de ofertas'],
+        donts: ['Prometer resultados milagrosos da noite para o dia', 'Desprezar rotinas simples']
+      },
+      contentPillars: [
+        { name: 'Dermocosméticos & Rotina', percentage: 40, description: 'Passo a passo de skincare, ordem de aplicação e ativos.' },
+        { name: 'Tablóide & Ofertas do Mês', percentage: 30, description: 'Destaques do encarte impresso e combos de ofertas.' },
+        { name: 'Cabelos & Perfumaria', percentage: 20, description: 'Cronograma capilar e fragrâncias em alta.' },
+        { name: 'Dicas dos Consultores', percentage: 10, description: 'Perguntas frequentes respondidas pela equipe da loja.' }
+      ],
+      goals: [
+        { metric: 'Retirada de tablóides na loja', target: '2.500 un', current: '2.100 un' },
+        { metric: 'Mensagens no WhatsApp pedindo ofertas', target: '180/mês', current: '145/mês' }
+      ]
+    },
+    createdAt: '2025-02-01',
+    files: []
   }
 ];
 
-export const DEFAULT_TASKS: Task[] = [];
+export const DEFAULT_CAMPAIGNS: Campaign[] = [
+  {
+    id: 'camp-perfetto-15',
+    clientId: 'c_perfetto',
+    title: 'Campanha de 15 Anos - Perfetto Uomo',
+    description: 'Celebração comemorativa dos 15 anos da loja: vitrine especial, jornal/encarte, catálogo e peças para Instagram e Stories.',
+    startDate: '2026-09-01',
+    endDate: '2026-09-30',
+    status: 'em_producao',
+    color: '#b45309',
+    folderEmoji: '🎉',
+    createdAt: '2026-08-25',
+  },
+  {
+    id: 'camp-melatti-tabloide',
+    clientId: 'c_melatti',
+    title: 'Tablóide de Ofertas & Festival Primavera',
+    description: 'Ação com tablóide impresso mensal de ofertas, encartes promocionais e distribuição de conteúdo digital.',
+    startDate: '2026-09-10',
+    endDate: '2026-09-28',
+    status: 'em_producao',
+    color: '#0284c7',
+    folderEmoji: '🌸',
+    createdAt: '2026-09-02',
+  },
+  {
+    id: 'camp-emely-noivas',
+    clientId: 'c_emely',
+    title: 'Temporada Noivas & Debutantes 2026',
+    description: 'Campanha de captação de noivas para prova de vestidos com antecedência.',
+    startDate: '2026-09-15',
+    endDate: '2026-10-15',
+    status: 'planejamento',
+    color: '#e11d48',
+    folderEmoji: '👰‍♀️',
+    createdAt: '2026-09-05',
+  }
+];
+
+export const DEFAULT_TASKS: Task[] = [
+  {
+    id: 'task-perf-1',
+    clientId: 'c_perfetto',
+    title: 'Elegância que faz parte da sua rotina',
+    categoryId: 'cat_carrossel',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-10',
+    date: '2026-09-10',
+    format: 'Carrossel',
+    status: 'em_aprovacao',
+    currentStep: 'em_aprovacao',
+    headline: 'Elegância que faz parte da sua rotina',
+    selectedHeadline: 'Elegância que faz parte da sua rotina',
+    briefingText: 'Carrossel demonstrando tecidos nobres e como a alfaiataria se encaixa na rotina diária.',
+    headlineOptions: ['Elegância que faz parte da sua rotina'],
+    copyMode: 'carrossel',
+    caption: 'Seu estilo aparece nos detalhes. No caimento que acompanha seus movimentos, na textura que faz a diferença e na confiança de se sentir bem.\n\nConheça a nossa seleção e encontre a peça que combina com o seu próximo momento.\n\n#PerfettoUomo #EstiloMasculino',
+    carouselSlides: [
+      { slideNumber: 1, title: 'Capa', content: 'Elegância que faz parte da sua rotina.' },
+      { slideNumber: 2, title: 'Corte', content: 'Caimento anatômico ajustado sob medida para o seu corpo.' },
+      { slideNumber: 3, title: 'Tecido', content: 'Fibras naturais de alta respirabilidade e toque macio.' },
+    ],
+    scriptText: '',
+    approvedCopySections: { caption: true, carousel: true },
+    files: [
+      {
+        id: 'f-perf-1',
+        name: 'Perfetto_Elegancia.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1200&q=80',
+        uploadedAt: '2026-09-09',
+      }
+    ],
+    timeSpent: 2400,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-08T10:00:00.000Z',
+    updatedAt: '2026-09-09T14:30:00.000Z',
+  },
+  {
+    id: 'task-perf-2',
+    clientId: 'c_perfetto',
+    title: 'O seu próximo capítulo começa aqui',
+    categoryId: 'cat_post',
+    assigneeId: 'u_ana',
+    assigneeIds: ['u_ana'],
+    postDate: '2026-09-12',
+    date: '2026-09-12',
+    format: 'Post único',
+    status: 'em_aprovacao',
+    currentStep: 'em_aprovacao',
+    headline: 'O seu próximo capítulo começa aqui',
+    briefingText: 'Post institucional para noivos e formandos.',
+    headlineOptions: ['O seu próximo capítulo começa aqui'],
+    caption: 'O terno certo não é apenas uma roupa: é a presença que você leva para os momentos decisivos da sua vida.\n\nAtendimento consultivo com hora marcada para você viver essa escolha com tranquilidade.\n\n#PerfettoUomo #TrajesMasculinos',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: { caption: true },
+    files: [
+      {
+        id: 'f-perf-2',
+        name: 'Perfetto_Capitulo.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?auto=format&fit=crop&w=1200&q=80',
+        uploadedAt: '2026-09-10',
+      }
+    ],
+    timeSpent: 1800,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-09T09:00:00.000Z',
+    updatedAt: '2026-09-10T11:00:00.000Z',
+  },
+  {
+    id: 'task-perf-3',
+    clientId: 'c_perfetto',
+    title: 'Posts de redes sociais · 02/09',
+    categoryId: 'cat_post',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-02',
+    date: '2026-09-02',
+    format: 'Post único',
+    status: 'planejamento',
+    currentStep: 'briefing',
+    briefingText: 'Entrega semanal recorrente de contrato.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 0,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'task-perf-4',
+    clientId: 'c_perfetto',
+    title: 'Posts de redes sociais · 04/09',
+    categoryId: 'cat_post',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-04',
+    date: '2026-09-04',
+    format: 'Post único',
+    status: 'planejamento',
+    currentStep: 'briefing',
+    briefingText: 'Entrega semanal recorrente de contrato.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 0,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'task-perf-5',
+    clientId: 'c_perfetto',
+    title: 'Posts de redes sociais · 07/09',
+    categoryId: 'cat_post',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-07',
+    date: '2026-09-07',
+    format: 'Post único',
+    status: 'planejamento',
+    currentStep: 'briefing',
+    briefingText: 'Entrega semanal recorrente de contrato.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 0,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'task-perf-6',
+    clientId: 'c_perfetto',
+    title: 'Muito além do primeiro olhar',
+    categoryId: 'cat_reels',
+    assigneeId: 'u_admin',
+    assigneeIds: ['u_admin'],
+    postDate: '2026-09-08',
+    date: '2026-09-08',
+    format: 'Reels',
+    status: 'postado',
+    currentStep: 'concluido',
+    headline: 'Muito além do primeiro olhar',
+    briefingText: 'Vídeo mostrando a diferença entre terno comum de loja e alfaiataria com ajuste fino.',
+    headlineOptions: ['Muito além do primeiro olhar'],
+    caption: 'A diferença do terno sob medida está no detalhe que quase ninguém vê, mas todo mundo sente.',
+    carouselSlides: [],
+    scriptText: 'Gancho: Você sabe porque alguns homens parecem mais elegantes mesmo usando um terno simples?',
+    approvedCopySections: { script: true },
+    files: [],
+    timeSpent: 3600,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-05T10:00:00.000Z',
+    updatedAt: '2026-09-08T18:00:00.000Z',
+  },
+  {
+    id: 'task-perf-7',
+    clientId: 'c_perfetto',
+    title: 'Posts de redes sociais · 09/09',
+    categoryId: 'cat_post',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-09',
+    date: '2026-09-09',
+    format: 'Post único',
+    status: 'planejamento',
+    currentStep: 'briefing',
+    briefingText: 'Entrega semanal recorrente de contrato.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 0,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-01T08:00:00.000Z',
+    updatedAt: '2026-09-01T08:00:00.000Z',
+  },
+  {
+    id: 'task-camp-perf-1',
+    clientId: 'c_perfetto',
+    campaignId: 'camp-perfetto-15',
+    title: 'Adesivo de Vitrine · 15 Anos Perfetto',
+    categoryId: 'cat_design',
+    assigneeId: 'u_rafa',
+    assigneeIds: ['u_rafa'],
+    postDate: '2026-09-18',
+    date: '2026-09-18',
+    format: 'Adesivo / Vitrine',
+    status: 'em_andamento',
+    currentStep: 'producao',
+    headline: 'Vitrine Comemorativa 15 Anos Perfetto',
+    briefingText: 'Layout em corte vinil fosco dourado e preto para as duas vitrines principais da loja comemorando os 15 anos.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 1200,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-02T10:00:00.000Z',
+    updatedAt: '2026-09-06T11:00:00.000Z',
+  },
+  {
+    id: 'task-camp-perf-2',
+    clientId: 'c_perfetto',
+    campaignId: 'camp-perfetto-15',
+    title: 'Jornal & Encarte de Ofertas Especial 15 Anos',
+    categoryId: 'cat_design',
+    assigneeId: 'u_rafa',
+    assigneeIds: ['u_rafa'],
+    postDate: '2026-09-22',
+    date: '2026-09-22',
+    format: 'Impresso / Jornal',
+    status: 'planejamento',
+    currentStep: 'briefing',
+    briefingText: 'Encarte de 4 páginas com editorial de fotos dos clientes homenageados e agradecimento da marca aos 15 anos.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 0,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-02T10:00:00.000Z',
+    updatedAt: '2026-09-02T10:00:00.000Z',
+  },
+  {
+    id: 'task-camp-perf-3',
+    clientId: 'c_perfetto',
+    campaignId: 'camp-perfetto-15',
+    title: 'Stories: Linha do Tempo 15 Anos',
+    categoryId: 'cat_stories',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-15',
+    date: '2026-09-15',
+    format: 'Stories',
+    status: 'planejamento',
+    currentStep: 'briefing',
+    briefingText: 'Sequência de 5 stories resgatando as primeiras fotos da inauguração da loja há 15 anos.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 0,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-02T10:00:00.000Z',
+    updatedAt: '2026-09-02T10:00:00.000Z',
+  },
+  {
+    id: 'task-mel-1',
+    clientId: 'c_melatti',
+    title: 'O cuidado começa na escolha certa',
+    categoryId: 'cat_reels',
+    assigneeId: 'u_joao',
+    assigneeIds: ['u_joao'],
+    postDate: '2026-09-10',
+    date: '2026-09-10',
+    format: 'Reels',
+    status: 'alterar',
+    currentStep: 'em_aprovacao',
+    headline: 'O cuidado começa na escolha certa',
+    briefingText: 'Vídeo dinâmico apresentando sérum facial antioxidante.',
+    headlineOptions: ['O cuidado começa na escolha certa'],
+    caption: 'Você sabia que o sérum facial deve ser aplicado antes do hidratante pesado? Descubra o passo a passo.',
+    carouselSlides: [],
+    scriptText: 'Gancho: Não jogue dinheiro fora usando seus dermocosméticos na ordem errada!',
+    clientFeedback: 'Por favor, dar mais destaque para a textura do produto nos primeiros 3 segundos do vídeo.',
+    approvedCopySections: { script: true },
+    files: [],
+    timeSpent: 2100,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-05T09:00:00.000Z',
+    updatedAt: '2026-09-09T16:00:00.000Z',
+  },
+  {
+    id: 'task-mel-2',
+    clientId: 'c_melatti',
+    campaignId: 'camp-melatti-tabloide',
+    title: 'Tablóide de Ofertas Mensal - Setembro',
+    categoryId: 'cat_design',
+    assigneeId: 'u_admin',
+    assigneeIds: ['u_admin'],
+    postDate: '2026-09-15',
+    date: '2026-09-15',
+    format: 'Tablóide impresso',
+    status: 'em_andamento',
+    currentStep: 'producao',
+    headline: 'Tablóide Primavera de Ofertas Melatti',
+    briefingText: 'Diagramação de tablóide quinzenal/mensal com 12 ofertas principais de protetor solar e hidratantes.',
+    headlineOptions: [],
+    caption: '',
+    carouselSlides: [],
+    scriptText: '',
+    approvedCopySections: {},
+    files: [],
+    timeSpent: 4200,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-01T10:00:00.000Z',
+    updatedAt: '2026-09-08T15:00:00.000Z',
+  },
+  {
+    id: 'task-mel-3',
+    clientId: 'c_melatti',
+    title: 'Rotina de Skincare Noturna: Os 3 Passos',
+    categoryId: 'cat_carrossel',
+    assigneeId: 'u_ana',
+    assigneeIds: ['u_ana'],
+    postDate: '2026-09-11',
+    date: '2026-09-11',
+    format: 'Carrossel',
+    status: 'em_aprovacao',
+    currentStep: 'em_aprovacao',
+    headline: 'Rotina de Skincare Noturna',
+    briefingText: 'Carrossel educativo ensinando limpeza dupla e hidratação.',
+    headlineOptions: ['Rotina de Skincare Noturna: Os 3 Passos'],
+    caption: 'Acordar com a pele descansada começa na noite anterior. Salve esse post para não esquecer a ordem correta!',
+    carouselSlides: [
+      { slideNumber: 1, title: 'Capa', content: 'Rotina Noturna em 3 Passos' },
+      { slideNumber: 2, title: 'Passo 1', content: 'Limpeza suave com água micelar' },
+      { slideNumber: 3, title: 'Passo 2', content: 'Tratamento com sérum nutritivo' },
+    ],
+    scriptText: '',
+    approvedCopySections: { caption: true, carousel: true },
+    files: [
+      {
+        id: 'f-mel-3',
+        name: 'Melatti_Skincare.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&w=1200&q=80',
+        uploadedAt: '2026-09-10',
+      }
+    ],
+    timeSpent: 1900,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-08T11:00:00.000Z',
+    updatedAt: '2026-09-10T17:00:00.000Z',
+  },
+  {
+    id: 'task-emely-aprov-1',
+    clientId: 'c_emely',
+    title: 'Carrossel: Os 4 Erros mais comuns ao escolher o Vestido de Noiva',
+    categoryId: 'cat_carrossel',
+    assigneeId: 'u_ana',
+    assigneeIds: ['u_ana'],
+    postDate: '2026-09-14',
+    date: '2026-09-14',
+    format: 'Carrossel',
+    status: 'em_aprovacao',
+    currentStep: 'em_aprovacao',
+    headline: 'Não cometa o erro nº 3 antes de visitar uma loja especializada 👰‍♀️',
+    selectedHeadline: 'Não cometa o erro nº 3 antes de visitar uma loja especializada 👰‍♀️',
+    briefingText: 'Post educativo voltado a noivas que estão no momento de decisão do vestido.',
+    headlineOptions: ['Não cometa o erro nº 3 antes de visitar uma loja especializada 👰‍♀️'],
+    caption: 'O vestido dos seus sonhos não precisa ser uma fonte de estresse.\n\nEvite esses 4 erros e agende sua prova com consultoria acolhedora na Emely Moda Festa!',
+    carouselSlides: [
+      { slideNumber: 1, title: 'Capa', content: 'Os 4 Maiores Erros ao Escolher seu Vestido de Noiva' },
+      { slideNumber: 2, title: 'Erro 01', content: 'Deixar para a última hora: ajustes finos exigem tempo e calma.' },
+    ],
+    scriptText: '',
+    approvedCopySections: { caption: true, carousel: true },
+    files: [
+      {
+        id: 'f-emely-1',
+        name: 'Emely_Vestido.jpg',
+        dataUrl: 'https://images.unsplash.com/photo-1594552072238-b8a33785b261?auto=format&fit=crop&w=1200&q=80',
+        uploadedAt: '2026-09-11',
+      }
+    ],
+    timeSpent: 1800,
+    timerStartedAt: null,
+    clientRequest: false,
+    createdAt: '2026-09-09T10:00:00.000Z',
+    updatedAt: '2026-09-11T12:00:00.000Z',
+  }
+];
 
 export const DEFAULT_NEWS: NewsItem[] = [
   {
@@ -459,6 +1116,7 @@ interface BeeWaveState {
   clients: Client[];
   addClient: (client: Partial<Client>) => Client;
   updateClient: (id: string, data: Partial<Client>) => void;
+  updateClientStrategy: (clientId: string, strategy: ClientStrategyDocument) => void;
   deleteClient: (id: string) => void;
   addClientFiles: (clientId: string, files: any[]) => void;
   removeClientFile: (clientId: string, fileId: string) => void;
@@ -528,6 +1186,18 @@ interface BeeWaveState {
   deleteStatus: (key: string) => void;
   moveStatus: (key: string, direction: number) => void;
   reorderStatuses: (newStatuses: TaskStatus[]) => void;
+
+  // Campaigns
+  campaigns: Campaign[];
+  addCampaign: (campaign: Partial<Campaign>) => Campaign;
+  updateCampaign: (id: string, data: Partial<Campaign>) => void;
+  deleteCampaign: (id: string) => void;
+
+  // Contract Services & Recurring Flow
+  addContractService: (clientId: string, service: Partial<ContractService>) => void;
+  updateContractService: (clientId: string, serviceId: string, data: Partial<ContractService>) => void;
+  deleteContractService: (clientId: string, serviceId: string) => void;
+  generateMonthlyTasksFromContract: (clientId: string, monthDateStr?: string) => number;
 
   // Custom Client Services
   addCustomService: (clientId: string, service: Omit<CustomService, 'id'>) => void;
@@ -841,6 +1511,20 @@ export const useAppStore = create<BeeWaveState>()(
         });
         if (updatedItem) syncClientToCloud(updatedItem);
         if (updatedClientUser) syncUserToCloud(updatedClientUser);
+      },
+      updateClientStrategy: (clientId, strategy) => {
+        let updatedItem: Client | undefined;
+        set((state) => {
+          const nextClients = state.clients.map((c) => {
+            if (c.id === clientId) {
+              updatedItem = { ...c, strategyDocument: strategy };
+              return updatedItem;
+            }
+            return c;
+          });
+          return { clients: nextClients };
+        });
+        if (updatedItem) syncClientToCloud(updatedItem);
       },
       deleteClient: (id) => {
         const clientToDelete = get().clients.find((c) => c.id === id);
@@ -1541,6 +2225,193 @@ export const useAppStore = create<BeeWaveState>()(
       reorderStatuses: (newStatuses) =>
         set(() => ({ statuses: newStatuses })),
 
+      // Campaigns
+      campaigns: DEFAULT_CAMPAIGNS,
+      addCampaign: (data) => {
+        const newCamp: Campaign = {
+          id: `camp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          clientId: data.clientId || '',
+          title: data.title || 'Nova Campanha',
+          description: data.description || '',
+          startDate: data.startDate || new Date().toISOString().slice(0, 10),
+          endDate: data.endDate || '',
+          status: data.status || 'planejamento',
+          color: data.color || '#f59e0b',
+          folderEmoji: data.folderEmoji || '📁',
+          createdAt: new Date().toISOString(),
+          ...data,
+        };
+        set((state) => ({ campaigns: [newCamp, ...state.campaigns] }));
+        return newCamp;
+      },
+      updateCampaign: (id, data) => {
+        set((state) => ({
+          campaigns: state.campaigns.map((c) => (c.id === id ? { ...c, ...data } : c)),
+        }));
+      },
+      deleteCampaign: (id) => {
+        set((state) => ({
+          campaigns: state.campaigns.filter((c) => c.id !== id),
+          // Unlink tasks that belonged to this campaign
+          tasks: state.tasks.map((t) => (t.campaignId === id ? { ...t, campaignId: undefined } : t)),
+        }));
+      },
+
+      // Contract Services & Recurring Flow
+      addContractService: (clientId, service) => {
+        const newService: ContractService = {
+          id: `srv_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          name: service.name || 'Posts de redes sociais',
+          frequency: service.frequency || 'semanal',
+          quantity: service.quantity || 3,
+          defaultAssigneeId: service.defaultAssigneeId || 'u_joao',
+          defaultFormat: service.defaultFormat || 'Post único',
+          daysOfWeek: service.daysOfWeek || [1, 3, 5],
+          active: service.active !== false,
+        };
+        set((state) => ({
+          clients: state.clients.map((c) =>
+            c.id === clientId
+              ? { ...c, contractServices: [...(c.contractServices || []), newService] }
+              : c
+          ),
+        }));
+        const target = get().clients.find((c) => c.id === clientId);
+        if (target) syncClientToCloud(target);
+      },
+      updateContractService: (clientId, serviceId, data) => {
+        set((state) => ({
+          clients: state.clients.map((c) =>
+            c.id === clientId
+              ? {
+                  ...c,
+                  contractServices: (c.contractServices || []).map((s) =>
+                    s.id === serviceId ? { ...s, ...data } : s
+                  ),
+                }
+              : c
+          ),
+        }));
+        const target = get().clients.find((c) => c.id === clientId);
+        if (target) syncClientToCloud(target);
+      },
+      deleteContractService: (clientId, serviceId) => {
+        set((state) => ({
+          clients: state.clients.map((c) =>
+            c.id === clientId
+              ? {
+                  ...c,
+                  contractServices: (c.contractServices || []).filter((s) => s.id !== serviceId),
+                }
+              : c
+          ),
+        }));
+        const target = get().clients.find((c) => c.id === clientId);
+        if (target) syncClientToCloud(target);
+      },
+      generateMonthlyTasksFromContract: (clientId, monthDateStr) => {
+        const client = get().clients.find((c) => c.id === clientId);
+        if (!client || !client.contractServices || client.contractServices.length === 0) return 0;
+
+        const baseDate = monthDateStr ? new Date(monthDateStr) : new Date();
+        const year = baseDate.getFullYear();
+        const month = baseDate.getMonth(); // 0-indexed
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        const newTasksToCreate: Task[] = [];
+
+        client.contractServices.forEach((service) => {
+          if (!service.active) return;
+
+          if (service.frequency === 'semanal') {
+            const targetDays = service.daysOfWeek || [1, 3, 5];
+            for (let day = 1; day <= daysInMonth; day++) {
+              const testDate = new Date(year, month, day);
+              const dayOfWeek = testDate.getDay();
+              if (targetDays.includes(dayOfWeek)) {
+                const dayPadded = String(day).padStart(2, '0');
+                const monthPadded = String(month + 1).padStart(2, '0');
+                const dateIso = `${year}-${monthPadded}-${dayPadded}`;
+
+                // Check if task already exists for this client on this date with this service name
+                const alreadyExists = get().tasks.some(
+                  (t) => t.clientId === clientId && t.postDate === dateIso && t.title.includes(service.name)
+                );
+
+                if (!alreadyExists) {
+                  newTasksToCreate.push({
+                    id: `task_rec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                    clientId,
+                    title: `${service.name} · ${dayPadded}/${monthPadded}`,
+                    categoryId: service.defaultFormat?.toLowerCase().includes('reels') ? 'cat_reels' : service.defaultFormat?.toLowerCase().includes('carrossel') ? 'cat_carrossel' : 'cat_post',
+                    assigneeId: service.defaultAssigneeId || 'u_joao',
+                    assigneeIds: [service.defaultAssigneeId || 'u_joao'],
+                    postDate: dateIso,
+                    date: dateIso,
+                    format: service.defaultFormat || 'Post único',
+                    status: 'planejamento',
+                    currentStep: 'briefing',
+                    briefingText: `Pauta recorrente de contrato (${service.name}). Entrega programada para ${dayPadded}/${monthPadded}.`,
+                    headlineOptions: [],
+                    caption: '',
+                    carouselSlides: [],
+                    scriptText: '',
+                    approvedCopySections: {},
+                    files: [],
+                    timeSpent: 0,
+                    timerStartedAt: null,
+                    clientRequest: false,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString(),
+                  });
+                }
+              }
+            }
+          } else if (service.frequency === 'mensal') {
+            const dayPadded = '15';
+            const monthPadded = String(month + 1).padStart(2, '0');
+            const dateIso = `${year}-${monthPadded}-${dayPadded}`;
+            const alreadyExists = get().tasks.some(
+              (t) => t.clientId === clientId && t.postDate === dateIso && t.title.includes(service.name)
+            );
+            if (!alreadyExists) {
+              newTasksToCreate.push({
+                id: `task_rec_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                clientId,
+                title: `${service.name} · ${monthPadded}/${year}`,
+                categoryId: 'cat_design',
+                assigneeId: service.defaultAssigneeId || 'u_admin',
+                assigneeIds: [service.defaultAssigneeId || 'u_admin'],
+                postDate: dateIso,
+                date: dateIso,
+                format: service.defaultFormat || 'Tablóide impresso',
+                status: 'planejamento',
+                currentStep: 'briefing',
+                briefingText: `Entrega mensal de contrato (${service.name}).`,
+                headlineOptions: [],
+                caption: '',
+                carouselSlides: [],
+                scriptText: '',
+                approvedCopySections: {},
+                files: [],
+                timeSpent: 0,
+                timerStartedAt: null,
+                clientRequest: false,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          }
+        });
+
+        if (newTasksToCreate.length > 0) {
+          set((state) => ({ tasks: [...newTasksToCreate, ...state.tasks] }));
+          newTasksToCreate.forEach((t) => syncTaskToCloud(t));
+        }
+
+        return newTasksToCreate.length;
+      },
+
       // Custom Client Services (Avulsos / Extras)
       addCustomService: (clientId, service) => {
         const newService: CustomService = {
@@ -1839,6 +2710,167 @@ export const useAppStore = create<BeeWaveState>()(
           // Do not force admin auto-login when unauthenticated
           if (!state.clients || state.clients.length === 0) {
             state.clients = DEFAULT_CLIENTS;
+          } else {
+            const hasEmely = state.clients.some((c) => c.id === 'c_emely');
+            if (!hasEmely) {
+              const emelyClient = DEFAULT_CLIENTS.find((c) => c.id === 'c_emely');
+              if (emelyClient) state.clients = [emelyClient, ...state.clients];
+            } else {
+              state.clients = state.clients.map((c) => {
+                if (c.id === 'c_emely' && !c.strategyDocument) {
+                  return { ...c, strategyDocument: EMELY_STRATEGY_DOCUMENT };
+                }
+                return c;
+              });
+            }
+          }
+          // Ensure Perfetto and Melatti clients exist
+          const hasPerfetto = state.clients?.some((c) => c.id === 'c_perfetto');
+          if (!hasPerfetto) {
+            const perf = DEFAULT_CLIENTS.find((c) => c.id === 'c_perfetto');
+            if (perf && state.clients) state.clients.push(perf);
+          } else if (state.clients) {
+            state.clients = state.clients.map((c) => {
+              if (c.id === 'c_perfetto' && (!c.contractServices || c.contractServices.length === 0)) {
+                const perf = DEFAULT_CLIENTS.find((x) => x.id === 'c_perfetto');
+                return { ...c, contractServices: perf?.contractServices, name: 'Branca' };
+              }
+              return c;
+            });
+          }
+
+          const hasMelatti = state.clients?.some((c) => c.id === 'c_melatti');
+          if (!hasMelatti) {
+            const mel = DEFAULT_CLIENTS.find((c) => c.id === 'c_melatti');
+            if (mel && state.clients) state.clients.push(mel);
+          } else if (state.clients) {
+            state.clients = state.clients.map((c) => {
+              if (c.id === 'c_melatti' && (!c.contractServices || c.contractServices.length === 0)) {
+                const mel = DEFAULT_CLIENTS.find((x) => x.id === 'c_melatti');
+                return { ...c, contractServices: mel?.contractServices };
+              }
+              return c;
+            });
+          }
+
+          if (!state.campaigns || state.campaigns.length === 0) {
+            state.campaigns = DEFAULT_CAMPAIGNS;
+          }
+
+          // Ensure Perfetto sample tasks exist
+          if (state.tasks) {
+            const hasPerfTask = state.tasks.some((t) => t.clientId === 'c_perfetto');
+            if (!hasPerfTask) {
+              const perfTasks = DEFAULT_TASKS.filter((t) => t.clientId === 'c_perfetto');
+              state.tasks = [...perfTasks, ...state.tasks];
+            }
+            const hasMelattiTask = state.tasks.some((t) => t.clientId === 'c_melatti');
+            if (!hasMelattiTask) {
+              const melattiTasks = DEFAULT_TASKS.filter((t) => t.clientId === 'c_melatti');
+              state.tasks = [...melattiTasks, ...state.tasks];
+            }
+          }
+
+          // Ensure Emely approval tasks exist for demo/testing
+          if (state.tasks) {
+            const hasEmelyTask = state.tasks.some((t) => t.clientId === 'c_emely' && t.status === 'em_aprovacao');
+            if (!hasEmelyTask) {
+              const sampleApprovalTasks: Task[] = [
+                {
+                  id: 'task-emely-aprov-1',
+                  title: 'Carrossel: Os 4 Erros mais comuns ao escolher o Vestido de Noiva',
+                  headline: 'Não cometa o erro nº 3 antes de visitar uma loja especializada 👰‍♀️',
+                  selectedHeadline: 'Não cometa o erro nº 3 antes de visitar uma loja especializada 👰‍♀️',
+                  caption: `O vestido dos seus sonhos não precisa ser uma fonte de estresse ou de surpresas desagradáveis.\n\nDepois de vestir centenas de noivas, reunimos os 4 erros que você DEVE evitar:\n\n1️⃣ Deixar a escolha para a última hora (o ideal é 6 a 8 meses antes para ajustes perfeitos).\n2️⃣ Provar modelos apenas pela foto de catálogo sem testar o conforto e caimento real no seu corpo.\n3️⃣ Levar opiniões demais na primeira prova (leia quem realmente te apoia e te conhece).\n4️⃣ Esquecer de considerar o local e o horário da cerimônia.\n\n✨ Na Emely Moda Festa, você conta com consultoria acolhedora e ateliê próprio de ajustes para você se sentir deslumbrante e segura no seu grande dia.\n\n👉 Agende seu horário pelo link da bio e venha viver essa experiência única!`,
+                  channel: 'instagram',
+                  format: 'Carrossel',
+                  status: 'em_aprovacao',
+                  currentStep: 'em_aprovacao',
+                  clientId: 'c_emely',
+                  categoryId: 'cat_carrossel',
+                  copyMode: 'carrossel',
+                  date: '2026-09-24',
+                  postDate: '2026-09-24',
+                  briefingText: 'Post educativo voltado a noivas que estão no momento de decisão do vestido.',
+                  headlineOptions: ['Não cometa o erro nº 3 antes de visitar uma loja especializada 👰‍♀️'],
+                  scriptText: '',
+                  approvedCopySections: { caption: true, carousel: true },
+                  timeSpent: 1800,
+                  timerStartedAt: null,
+                  clientRequest: false,
+                  carouselSlides: [
+                    { slideNumber: 1, title: 'Capa', content: 'Os 4 Maiores Erros ao Escolher seu Vestido de Noiva' },
+                    { slideNumber: 2, title: 'Erro 01', content: 'Deixar para a última hora: ajustes finos exigem tempo e calma.' },
+                    { slideNumber: 3, title: 'Erro 02', content: 'Escolher apenas pela foto de revista sem provar no corpo real.' },
+                    { slideNumber: 4, title: 'Erro 03', content: 'Ignorar o clima e o estilo da festa (campo, praia, igreja).' },
+                    { slideNumber: 5, title: 'Final / CTA', content: 'Agende seu horário com nossas consultoras exclusivas na Emely!' }
+                  ],
+                  files: [
+                    {
+                      id: 'f-emely-post-1',
+                      name: 'Capa_Carrossel_Noiva.jpg',
+                      url: 'https://images.unsplash.com/photo-1594552072238-b8a33785b261?auto=format&fit=crop&w=800&q=80',
+                      type: 'image/jpeg',
+                      size: 420000,
+                    }
+                  ],
+                  activity: [
+                    {
+                      ts: new Date().toISOString(),
+                      type: 'status_change',
+                      by: 'Agência BeeWave',
+                      text: 'Pauta e carrossel finalizados e enviados para aprovação da Emely.',
+                    }
+                  ],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                },
+                {
+                  id: 'task-emely-aprov-2',
+                  title: 'Reels: Nova Coleção Debutantes 2026 - O Brilho dos 15 Anos',
+                  headline: 'O momento que você esperou a vida inteira merece um vestido inesquecível ✨',
+                  selectedHeadline: 'O momento que você esperou a vida inteira merece um vestido inesquecível ✨',
+                  caption: `15 anos não se repetem! A nossa nova coleção de debutantes chegou com saias fluidas, corpetes estruturados sob medida e opções clássicas ou modernas que acompanham a valsa e a balada.\n\nMarca a sua melhor amiga debutante que precisa ver isso! 👇`,
+                  channel: 'instagram',
+                  format: 'Reels',
+                  status: 'em_aprovacao',
+                  currentStep: 'em_aprovacao',
+                  clientId: 'c_emely',
+                  categoryId: 'cat_reels',
+                  copyMode: 'roteiro',
+                  date: '2026-09-28',
+                  postDate: '2026-09-28',
+                  briefingText: 'Apresentar os vestidos de 15 anos com dinamismo e elegância.',
+                  headlineOptions: ['O momento que você esperou a vida inteira merece um vestido inesquecível ✨'],
+                  scriptText: 'Cena 1: Close nos detalhes do bordado...\nCena 2: Giro com a saia fluida...',
+                  approvedCopySections: { caption: true, script: true },
+                  timeSpent: 1200,
+                  timerStartedAt: null,
+                  clientRequest: false,
+                  carouselSlides: [],
+                  files: [
+                    {
+                      id: 'f-emely-post-2',
+                      name: 'Debutante_Preview.jpg',
+                      url: 'https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80',
+                      type: 'image/jpeg',
+                      size: 380000,
+                    }
+                  ],
+                  activity: [
+                    {
+                      ts: new Date().toISOString(),
+                      type: 'status_change',
+                      by: 'Agência BeeWave',
+                      text: 'Vídeo editado e enviado para conferência e aprovação.',
+                    }
+                  ],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                }
+              ];
+              state.tasks = [...sampleApprovalTasks, ...state.tasks];
+            }
           }
           // Ensure no task timer is left running indefinitely across page reloads/sessions
           state.dockedTimerTaskId = null;
