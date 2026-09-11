@@ -13,14 +13,12 @@ export interface User {
   avatarUrl?: string;
   clientId?: string; // If role is 'cliente'
   joinedAt?: string;
+  /** Chaves espelham os itens da barra lateral; ver PERMISSOES. */
   permissions?: {
     tarefas?: boolean;
     clientes?: boolean;
-    calendario?: boolean;
-    noticias?: boolean;
+    equipe?: boolean;
     prompts?: boolean;
-    financeiro?: boolean;
-    crm?: boolean;
   };
 }
 

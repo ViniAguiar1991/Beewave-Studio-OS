@@ -1,54 +1,74 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-  Users,
-  UserPlus,
-  Search,
-  Mail,
-  Phone,
-  Briefcase,
-  Shield,
-  ShieldCheck,
-  Key,
-  Eye,
-  EyeOff,
-  Share2,
   Check,
   Edit2,
+  Eye,
+  EyeOff,
+  Plus,
+  Search,
+  Share2,
   Trash2,
-  Sparkles,
-  ExternalLink,
-  MessageCircle,
-  ListChecks,
-  Lock,
-  Calendar,
-  Filter,
+  X,
 } from 'lucide-react';
 import { useAppStore, useCurrentUser } from '../store';
-import { User, Role } from '../types';
+import { Role, User } from '../types';
+import { Button, EmptyState, Toast } from './ui';
 
-const JOB_PRESETS = [
+const CARGOS = [
+  'Diretor Geral',
+  'Gestor de Contas',
   'Designer Gráfico',
-  'Motion Designer & Vídeo',
-  'Copywriter & Conteúdo',
-  'Social Media Manager',
-  'Gestor de Tráfego Pago',
-  'Atendimento & Sucesso do Cliente',
-  'Diretor de Criação',
-  'Estrategista Digital',
-  'Desenvolvedor Web',
+  'Social Media',
+  'Copywriter',
+  'Editor de Vídeo',
+  'Fotógrafo',
+  'Tráfego Pago',
 ];
 
-const COLOR_PRESETS = [
-  '#f59e0b', // Amber
-  '#0ea5e9', // Sky
-  '#8b5cf6', // Purple
-  '#10b981', // Emerald
-  '#f43f5e', // Rose
-  '#ec4899', // Pink
-  '#3b82f6', // Blue
-  '#14b8a6', // Teal
+const CORES = [
+  '#0ea5e9',
+  '#f59e0b',
+  '#10b981',
+  '#8b5cf6',
+  '#ef4444',
+  '#ec4899',
+  '#14b8a6',
+  '#64748b',
 ];
 
+/**
+ * Permissões que existem de verdade.
+ *
+ * A lista antiga oferecia sete chaves, e quatro delas — calendário,
+ * notícias, financeiro e CRM — não controlavam nada: ou a seção sumiu do
+ * app, ou nunca existiu. Desmarcar dava a impressão de restringir acesso
+ * sem restringir coisa nenhuma. E "clientes" liberava a Equipe junto, de
+ * carona, sem dizer.
+ *
+ * Cada linha aqui corresponde a um item da barra lateral. Se um dia
+ * aparecer um item novo, ele entra nesta lista ou não é restringível.
+ */
+const PERMISSOES: { key: string; label: string; descricao: string }[] = [
+  { key: 'tarefas', label: 'Tarefas e campanhas', descricao: 'Ver e editar as pautas da agência' },
+  { key: 'clientes', label: 'Clientes', descricao: 'Abrir as pastas e o acesso ao portal' },
+  { key: 'equipe', label: 'Equipe', descricao: 'Ver e cadastrar colegas' },
+  { key: 'prompts', label: 'Prompts', descricao: 'Biblioteca de comandos salvos' },
+];
+
+const PADRAO_PERMISSOES = { tarefas: true, clientes: true, equipe: false, prompts: true };
+
+const iniciais = (nome: string) =>
+  nome.split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase();
+
+/**
+ * Equipe — quem trabalha na agência e o que cada um alcança.
+ *
+ * Uma linha por pessoa, não um card cheio de métricas. O que importa de
+ * relance é nome, cargo e quantas pautas estão na mão dela; o resto abre
+ * no formulário.
+ *
+ * Clientes não aparecem aqui: o acesso deles mora na pasta de cada conta.
+ */
 export const CollaboratorsView: React.FC = () => {
   const currentUser = useCurrentUser();
   const users = useAppStore((s) => s.users);
@@ -57,742 +77,532 @@ export const CollaboratorsView: React.FC = () => {
   const updateUser = useAppStore((s) => s.updateUser);
   const deleteUser = useAppStore((s) => s.deleteUser);
 
-  // Filter ONLY collaborators and admins (Exclude clients)
-  const collaborators = users.filter((u) => u.role !== 'cliente');
+  const [busca, setBusca] = useState('');
+  const [editando, setEditando] = useState<User | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [aRemover, setARemover] = useState<User | null>(null);
+  const [copiado, setCopiado] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRoleFilter, setSelectedRoleFilter] = useState<'all' | 'admin' | 'colaborador'>('all');
-  const [selectedJobFilter, setSelectedJobFilter] = useState<string>('all');
+  const equipe = useMemo(() => users.filter((u) => u.role !== 'cliente'), [users]);
 
-  // Modal States
-  const [showModal, setShowModal] = useState(false);
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const visiveis = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+    if (!termo) return equipe;
+    return equipe.filter(
+      (u) =>
+        u.name.toLowerCase().includes(termo) ||
+        u.email.toLowerCase().includes(termo) ||
+        (u.jobTitle || '').toLowerCase().includes(termo)
+    );
+  }, [equipe, busca]);
 
-  // Form State
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('1234');
-  const [phone, setPhone] = useState('');
-  const [jobTitle, setJobTitle] = useState('Designer Gráfico');
-  const [role, setRole] = useState<Role>('colaborador');
-  const [color, setColor] = useState('#0ea5e9');
-  const [status, setStatus] = useState<'active' | 'inactive'>('active');
-  const [showPassword, setShowPassword] = useState(false);
-  const [permissions, setPermissions] = useState({
-    tarefas: true,
-    clientes: true,
-    calendario: true,
-    noticias: true,
-    prompts: true,
-    financeiro: false,
-    crm: false,
-  });
-
-  // Copy invitation feedback
-  const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // Delete confirmation modal state
-  const [userToDelete, setUserToDelete] = useState<User | null>(null);
-
-  // Open modal for new user
-  const handleOpenNewUser = () => {
-    setEditingUserId(null);
-    setName('');
-    setEmail('');
-    setPassword('1234');
-    setPhone('');
-    setJobTitle('Designer Gráfico');
-    setRole('colaborador');
-    setColor(COLOR_PRESETS[Math.floor(Math.random() * COLOR_PRESETS.length)]);
-    setStatus('active');
-    setShowPassword(false);
-    setPermissions({
-      tarefas: true,
-      clientes: true,
-      calendario: true,
-      noticias: true,
-      prompts: true,
-      financeiro: false,
-      crm: false,
-    });
-    setShowModal(true);
+  const copiarAcesso = (user: User) => {
+    const url = `${window.location.origin}${window.location.pathname}?email=${encodeURIComponent(user.email)}`;
+    const texto = `Olá ${user.name.split(' ')[0]}!\n\nSeu acesso ao Beewave Studio:\n\nLink: ${url}\nE-mail: ${user.email}\nSenha: ${user.password || '1234'}\n\nAbra o link e entre com esses dados.`;
+    navigator.clipboard.writeText(texto);
+    setCopiado(user.id);
+    setTimeout(() => setCopiado((c) => (c === user.id ? null : c)), 3000);
   };
 
-  // Open modal for editing user
-  const handleOpenEditUser = (user: User) => {
-    setEditingUserId(user.id);
-    setName(user.name);
-    setEmail(user.email);
-    setPassword(user.password || '1234');
-    setPhone(user.phone || '');
-    setJobTitle(user.jobTitle || 'Colaborador');
-    setRole(user.role);
-    setColor(user.color || '#0ea5e9');
-    setStatus(user.status || 'active');
-    setShowPassword(false);
-    setPermissions({
-      tarefas: user.permissions?.tarefas ?? true,
-      clientes: user.permissions?.clientes ?? true,
-      calendario: user.permissions?.calendario ?? true,
-      noticias: user.permissions?.noticias ?? true,
-      prompts: user.permissions?.prompts ?? true,
-      financeiro: user.permissions?.financeiro ?? false,
-      crm: user.permissions?.crm ?? false,
-    });
-    setShowModal(true);
-  };
-
-  // Save form
-  const handleSaveUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !email.trim()) return;
-
-    if (editingUserId) {
-      updateUser(editingUserId, {
-        name: name.trim(),
-        email: email.trim(),
-        password: password.trim(),
-        phone: phone.trim(),
-        jobTitle: jobTitle.trim(),
-        role,
-        color,
-        status,
-        permissions: role === 'admin' ? {} : permissions,
-      });
+  const salvar = (dados: Partial<User>) => {
+    if (editando) {
+      updateUser(editando.id, dados);
+      setAviso(`${dados.name || editando.name} atualizado.`);
     } else {
-      addUser({
-        name: name.trim(),
-        email: email.trim(),
-        password: password.trim(),
-        phone: phone.trim(),
-        jobTitle: jobTitle.trim(),
-        role,
-        color,
-        status,
-        permissions: role === 'admin' ? {} : permissions,
-      });
+      addUser(dados);
+      setAviso(`${dados.name} entrou na equipe.`);
     }
-
-    setShowModal(false);
+    setEditando(null);
+    setCriando(false);
   };
-
-  // Copy WhatsApp invitation
-  const handleCopyInvite = (user: User) => {
-    const origin = window.location.origin + window.location.pathname;
-    const inviteUrl = `${origin}?email=${encodeURIComponent(user.email)}`;
-    const pass = user.password || '1234';
-    const text = `Olá ${user.name.split(' ')[0]}! 👋\n\nAqui está o seu acesso ao painel de equipe da BeeWave:\n\n🌐 *Link de Acesso:* ${inviteUrl}\n📧 *E-mail de Login:* ${user.email}\n🔑 *Senha:* ${pass}\n\nAbra o link acima para acessar seu painel, tarefas e briefings!`;
-    navigator.clipboard.writeText(text);
-    setCopiedId(user.id);
-    setTimeout(() => setCopiedId(null), 3000);
-  };
-
-  // Filtered Collaborators
-  const filteredCollaborators = collaborators.filter((u) => {
-    const matchesSearch =
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (u.phone && u.phone.includes(searchQuery)) ||
-      (u.jobTitle && u.jobTitle.toLowerCase().includes(searchQuery.toLowerCase()));
-
-    const matchesRole =
-      selectedRoleFilter === 'all' ? true : u.role === selectedRoleFilter;
-
-    const matchesJob =
-      selectedJobFilter === 'all'
-        ? true
-        : u.jobTitle?.toLowerCase().includes(selectedJobFilter.toLowerCase());
-
-    return matchesSearch && matchesRole && matchesJob;
-  });
-
-  // Calculate team stats
-  const totalCollaborators = collaborators.length;
-  const adminCount = collaborators.filter((u) => u.role === 'admin').length;
-  const memberCount = totalCollaborators - adminCount;
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 pb-20">
-      {/* Header & Quick Stats */}
-      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">👥</span>
-            <h1 className="text-2xl font-bold font-display text-slate-900 dark:text-white">
-              Equipe & Colaboradores
-            </h1>
-          </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Gerencie os membros da sua agência, cargos, permissões e acessos ao sistema
+    <div className="mx-auto max-w-4xl space-y-6 pb-16">
+      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="font-display text-[30px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
+            Equipe
+          </h1>
+          <p className="t-body text-slate-600 dark:text-slate-400 mt-1">
+            {equipe.length} {equipe.length === 1 ? 'pessoa na agência' : 'pessoas na agência'}. O
+            acesso dos clientes fica na pasta de cada conta.
           </p>
         </div>
+        <Button variant="primary" icon={Plus} onClick={() => setCriando(true)}>
+          Nova pessoa
+        </Button>
+      </header>
 
-        <button
-          id="btn-add-collaborator"
-          type="button"
-          onClick={handleOpenNewUser}
-          className="flex items-center justify-center gap-2 rounded-2xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 font-bold px-5 py-3 text-xs shadow-md transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
-        >
-          <UserPlus className="h-4 w-4" />
-          <span>Novo Colaborador</span>
-        </button>
-      </div>
-
-      {/* Info Notice: Separation from Clients */}
-      <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60 flex items-start gap-3">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900 font-bold text-xs">
-          💡
-        </span>
-        <div className="text-xs text-slate-700 dark:text-slate-300">
-          <p className="font-bold text-slate-900 dark:text-slate-100">
-            Equipe Interna separada dos Clientes
-          </p>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-            Aqui ficam apenas os profissionais da agência (designers, copywriters, gestores). Os acessos dos clientes são gerenciados individualmente na aba <strong>Clientes</strong>.
-          </p>
-        </div>
-      </div>
-
-      {/* Quick Metrics Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="clean-card p-4 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
-          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Total na Equipe</p>
-          <p className="text-xl font-bold font-display text-slate-900 dark:text-white mt-1">{totalCollaborators}</p>
-        </div>
-        <div className="clean-card p-4 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
-          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Colaboradores</p>
-          <p className="text-xl font-bold font-display text-sky-600 dark:text-sky-400 mt-1">{memberCount}</p>
-        </div>
-        <div className="clean-card p-4 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
-          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Administradores</p>
-          <p className="text-xl font-bold font-display text-slate-900 dark:text-white mt-1">{adminCount}</p>
-        </div>
-        <div className="clean-card p-4 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800">
-          <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Tarefas Atribuídas</p>
-          <p className="text-xl font-bold font-display text-emerald-600 dark:text-emerald-400 mt-1">
-            {tasks.filter((t) => t.assigneeId && t.status !== 'postado').length} ativas
-          </p>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="clean-card p-4 bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+      {equipe.length > 4 && (
+        <div className="relative max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
           <input
-            id="input-search-collaborators"
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Buscar por nome, e-mail, cargo..."
-            className="clean-input h-10 w-full pl-10 pr-4 text-xs bg-slate-50 dark:bg-slate-800/80 border-slate-300 dark:border-slate-700 rounded-xl"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por nome ou cargo…"
+            className="w-full h-9 pl-9 pr-8 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors"
           />
+          {busca && (
+            <button
+              onClick={() => setBusca('')}
+              aria-label="Limpar busca"
+              className="absolute right-2 top-1/2 -translate-y-1/2 grid h-5 w-5 place-items-center rounded text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
+      )}
 
-        <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
-          {/* Role Filter */}
-          <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl">
-            <button
-              type="button"
-              onClick={() => setSelectedRoleFilter('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                selectedRoleFilter === 'all'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
-              }`}
-            >
-              Todos ({totalCollaborators})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedRoleFilter('colaborador')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                selectedRoleFilter === 'colaborador'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
-              }`}
-            >
-              Colaboradores ({memberCount})
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedRoleFilter('admin')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                selectedRoleFilter === 'admin'
-                  ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-500 hover:text-slate-900 dark:text-slate-400'
-              }`}
-            >
-              Admins ({adminCount})
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Collaborators Grid */}
-      {filteredCollaborators.length === 0 ? (
-        <div className="clean-card p-12 text-center bg-white/80 dark:bg-slate-900/80 border border-slate-200/80 dark:border-slate-800 space-y-3">
-          <Users className="h-10 w-10 text-slate-300 mx-auto" />
-          <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-            Nenhum colaborador encontrado
-          </p>
-          <p className="text-xs text-slate-400 max-w-sm mx-auto">
-            Tente buscar com outros termos ou adicione um novo membro à equipe.
-          </p>
-        </div>
+      {visiveis.length === 0 ? (
+        <EmptyState
+          title={equipe.length === 0 ? 'Ninguém cadastrado ainda' : 'Ninguém com esse nome'}
+          hint={
+            equipe.length === 0
+              ? 'Cadastre quem trabalha na agência para poder atribuir pautas e liberar o acesso.'
+              : 'Tente outro termo de busca.'
+          }
+          action={
+            equipe.length === 0 ? (
+              <Button variant="primary" size="sm" icon={Plus} onClick={() => setCriando(true)}>
+                Cadastrar pessoa
+              </Button>
+            ) : undefined
+          }
+        />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          {filteredCollaborators.map((user) => {
-            const userTasks = tasks.filter((t) => t.assigneeId === user.id);
-            const activeTasksCount = userTasks.filter((t) => t.status !== 'postado').length;
-            const completedTasksCount = userTasks.filter((t) => t.status === 'postado').length;
+        <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
+          {visiveis.map((user) => {
+            const naMao = tasks.filter(
+              (t) =>
+                (t.assigneeId === user.id || (t.assigneeIds || []).includes(user.id)) &&
+                t.status !== 'postado' &&
+                t.status !== 'aprovado'
+            ).length;
+            const inativo = user.status === 'inactive';
 
             return (
-              <div
-                key={user.id}
-                className="clean-card p-5 bg-white/90 dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group"
-              >
-                <div className="space-y-4">
-                  {/* Top Card: Avatar + Role Badge + Options */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div
-                        className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white font-black text-sm shadow-md"
-                        style={{ backgroundColor: user.color || '#0ea5e9' }}
-                      >
-                        {user.name
-                          .split(' ')
-                          .map((n) => n[0])
-                          .slice(0, 2)
-                          .join('')
-                          .toUpperCase()}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
-                            {user.name}
-                          </h3>
-                          {user.role === 'admin' && (
-                            <span title="Administrador">👑</span>
-                          )}
-                        </div>
-                        <p className="text-xs font-medium text-slate-600 dark:text-slate-300 flex items-center gap-1 mt-0.5 truncate">
-                          <Briefcase className="h-3 w-3 shrink-0 text-slate-400" />
-                          <span>{user.jobTitle || (user.role === 'admin' ? 'Diretor Geral' : 'Colaborador')}</span>
-                        </p>
-                      </div>
-                    </div>
+              <li key={user.id} className="flex items-center gap-4 py-4 group">
+                <span
+                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg text-white font-display text-[13px] font-semibold ${
+                    inativo ? 'opacity-40' : ''
+                  }`}
+                  style={{ backgroundColor: user.color || '#64748b' }}
+                  aria-hidden="true"
+                >
+                  {iniciais(user.name)}
+                </span>
 
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider shrink-0 ${
-                        user.role === 'admin'
-                          ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border border-slate-900 dark:border-white'
-                          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                      }`}
-                    >
-                      {user.role === 'admin' ? 'Admin' : 'Membro'}
-                    </span>
-                  </div>
-
-                  {/* Contact Info: Email & WhatsApp */}
-                  <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300 pt-1 border-t border-slate-100 dark:border-slate-800">
-                    <div className="flex items-center gap-2">
-                      <Mail className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">{user.email}</span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <Phone className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                      {user.phone && typeof user.phone === 'string' ? (
-                        <a
-                          href={`https://wa.me/55${user.phone.replace(/\D/g, '')}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-1"
-                        >
-                          <span>{user.phone}</span>
-                          <MessageCircle className="h-3 w-3" />
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 italic">Telefone não informado</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Workload Stats & Permissions */}
-                  <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5 text-slate-700 dark:text-slate-300">
-                      <ListChecks className="h-3.5 w-3.5 text-slate-500" />
-                      <span>{activeTasksCount} tarefas ativas</span>
-                    </div>
-                    <span className="text-[11px] text-slate-400">
-                      {completedTasksCount} concluídas
-                    </span>
-                  </div>
+                <div className="min-w-0 flex-1">
+                  <p className="t-lead font-medium text-slate-950 dark:text-white truncate">
+                    {user.name}
+                    {user.role === 'admin' && (
+                      <span className="ml-2 t-meta font-normal text-slate-400">administrador</span>
+                    )}
+                    {inativo && (
+                      <span className="ml-2 t-meta font-normal text-slate-400">inativo</span>
+                    )}
+                  </p>
+                  <p className="t-meta text-slate-500 dark:text-slate-400 truncate">
+                    {user.jobTitle || 'Sem cargo definido'} · {user.email}
+                  </p>
                 </div>
 
-                {/* Card Footer Actions */}
-                <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2">
+                <span className="shrink-0 hidden sm:block t-meta text-slate-400 dark:text-slate-500 w-[110px] text-right tabular-nums">
+                  {naMao === 0 ? 'sem pautas' : `${naMao} ${naMao === 1 ? 'pauta' : 'pautas'}`}
+                </span>
+
+                <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                   <button
-                    type="button"
-                    onClick={() => handleCopyInvite(user)}
-                    className="flex-1 flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-bold py-2 px-3 transition-all cursor-pointer"
-                    title="Copiar dados de login para WhatsApp"
+                    onClick={() => copiarAcesso(user)}
+                    aria-label={`Copiar acesso de ${user.name}`}
+                    title="Copiar acesso para enviar"
+                    className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
                   >
-                    {copiedId === user.id ? (
-                      <>
-                        <Check className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="text-emerald-600 dark:text-emerald-400">Copiado!</span>
-                      </>
+                    {copiado === user.id ? (
+                      <Check className="h-3.5 w-3.5 text-emerald-600" />
                     ) : (
-                      <>
-                        <Share2 className="h-3.5 w-3.5 text-slate-400" />
-                        <span>Acesso WhatsApp</span>
-                      </>
+                      <Share2 className="h-3.5 w-3.5" />
                     )}
                   </button>
-
-                  <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setEditando(user)}
+                    aria-label={`Editar ${user.name}`}
+                    title="Editar"
+                    className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                  >
+                    <Edit2 className="h-3.5 w-3.5" />
+                  </button>
+                  {user.id !== currentUser?.id && user.id !== 'u_admin' && (
                     <button
-                      type="button"
-                      onClick={() => handleOpenEditUser(user)}
-                      className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-all cursor-pointer"
-                      title="Editar cadastro"
+                      onClick={() => setARemover(user)}
+                      aria-label={`Remover ${user.name}`}
+                      title="Remover"
+                      className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-rose-600 cursor-pointer"
                     >
-                      <Edit2 className="h-3.5 w-3.5" />
+                      <Trash2 className="h-3.5 w-3.5" />
                     </button>
-
-                    {user.id !== currentUser?.id && user.id !== 'u_admin' && (
-                      <button
-                        type="button"
-                        onClick={() => setUserToDelete(user)}
-                        className="p-2 rounded-xl border border-rose-200 dark:border-rose-900/40 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-all cursor-pointer"
-                        title="Remover colaborador"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </div>
-              </div>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
 
-      {/* Modal: Add / Edit Collaborator */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="clean-card w-full max-w-lg p-6 bg-white dark:bg-slate-900 space-y-5 shadow-2xl border border-slate-200 dark:border-slate-800 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="grid h-8 w-8 place-items-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white">
-                  <UserPlus className="h-4 w-4" />
-                </div>
-                <h2 className="text-base font-bold font-display text-slate-900 dark:text-white">
-                  {editingUserId ? 'Editar Colaborador' : 'Cadastrar Novo Colaborador'}
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowModal(false)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg leading-none cursor-pointer"
-              >
-                ✕
-              </button>
+      {(criando || editando) && (
+        <FormularioPessoa
+          user={editando}
+          onClose={() => {
+            setCriando(false);
+            setEditando(null);
+          }}
+          onSave={salvar}
+        />
+      )}
+
+      {aRemover && (
+        <ConfirmarRemocao
+          user={aRemover}
+          quantasPautas={
+            tasks.filter(
+              (t) => t.assigneeId === aRemover.id || (t.assigneeIds || []).includes(aRemover.id)
+            ).length
+          }
+          onClose={() => setARemover(null)}
+          onConfirm={() => {
+            deleteUser(aRemover.id);
+            setAviso(`${aRemover.name} saiu da equipe.`);
+            setARemover(null);
+          }}
+        />
+      )}
+
+      <Toast message={aviso} onDismiss={() => setAviso(null)} />
+    </div>
+  );
+};
+
+/* ========================================================================== */
+
+const FormularioPessoa: React.FC<{
+  user: User | null;
+  onClose: () => void;
+  onSave: (dados: Partial<User>) => void;
+}> = ({ user, onClose, onSave }) => {
+  const [name, setName] = useState(user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [password, setPassword] = useState(user?.password || '1234');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [jobTitle, setJobTitle] = useState(user?.jobTitle || CARGOS[2]);
+  const [role, setRole] = useState<Role>(user?.role || 'colaborador');
+  const [color, setColor] = useState(
+    user?.color || CORES[Math.floor(Math.random() * CORES.length)]
+  );
+  const [ativo, setAtivo] = useState((user?.status || 'active') === 'active');
+  const [verSenha, setVerSenha] = useState(false);
+  const [permissoes, setPermissoes] = useState<Record<string, boolean>>(() => {
+    const base: Record<string, boolean> = {};
+    for (const p of PERMISSOES) {
+      base[p.key] = user
+        ? ((user.permissions as any)?.[p.key] ?? (PADRAO_PERMISSOES as any)[p.key] ?? false)
+        : ((PADRAO_PERMISSOES as any)[p.key] ?? false);
+    }
+    return base;
+  });
+
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !email.trim()) return;
+    onSave({
+      name: name.trim(),
+      email: email.trim().toLowerCase(),
+      password: password.trim() || '1234',
+      phone: phone.trim(),
+      jobTitle: jobTitle.trim(),
+      role,
+      color,
+      status: ativo ? 'active' : 'inactive',
+      // Administrador alcança tudo, então guardar marcações para ele só
+      // criaria uma segunda fonte de verdade para a mesma pergunta.
+      permissions: role === 'admin' ? {} : permissoes,
+    });
+  };
+
+  const campo =
+    'w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors';
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center p-0 sm:p-6">
+      <div className="absolute inset-0 bg-slate-950/55" onClick={onClose} aria-hidden="true" />
+
+      <form
+        onSubmit={submit}
+        role="dialog"
+        aria-modal="true"
+        aria-label={user ? `Editar ${user.name}` : 'Nova pessoa'}
+        className="relative w-full sm:max-w-lg max-h-[92vh] flex flex-col bg-white dark:bg-[#0f1114] sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl"
+        style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <div className="flex items-center justify-between gap-4 px-6 h-14 shrink-0 border-b border-slate-200 dark:border-slate-800">
+          <h2 className="font-display text-[18px] font-semibold tracking-tight text-slate-950 dark:text-white truncate">
+            {user ? user.name : 'Nova pessoa'}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fechar"
+            className="shrink-0 grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-6 py-6 space-y-5">
+          <div className="flex items-end gap-4">
+            <span
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-lg text-white font-display text-[15px] font-semibold"
+              style={{ backgroundColor: color }}
+              aria-hidden="true"
+            >
+              {iniciais(name || '?')}
+            </span>
+            <div className="min-w-0 flex-1">
+              <label htmlFor="col-nome" className="block t-label text-slate-500 mb-1.5">
+                Nome
+              </label>
+              <input
+                id="col-nome"
+                autoFocus
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Nome e sobrenome"
+                className={campo}
+              />
             </div>
-
-            <form onSubmit={handleSaveUser} className="space-y-4 text-xs">
-              {/* Nome Completo */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Nome Completo *
-                </label>
-                <input
-                  id="input-collab-name"
-                  type="text"
-                  required
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Ex: Juliana Mendes"
-                  className="clean-input h-10 w-full px-3 text-xs bg-slate-50 dark:bg-slate-800"
-                />
-              </div>
-
-              {/* Cargo / Especialidade */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Cargo / Especialidade na Agência
-                </label>
-                <div className="space-y-2">
-                  <input
-                    id="input-collab-job"
-                    type="text"
-                    value={jobTitle}
-                    onChange={(e) => setJobTitle(e.target.value)}
-                    placeholder="Ex: Designer Gráfico, Copywriter, Social Media..."
-                    className="clean-input h-10 w-full px-3 text-xs bg-slate-50 dark:bg-slate-800"
-                  />
-                  <div className="flex flex-wrap gap-1.5">
-                    {JOB_PRESETS.map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => setJobTitle(preset)}
-                        className={`text-[10px] px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                          jobTitle === preset
-                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-slate-900 dark:border-white font-bold'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Telefone / WhatsApp e Cor */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Telefone / WhatsApp
-                  </label>
-                  <input
-                    id="input-collab-phone"
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="(54) 99999-8888"
-                    className="clean-input h-10 w-full px-3 text-xs bg-slate-50 dark:bg-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                    Cor de Identificação
-                  </label>
-                  <div className="flex items-center gap-2 pt-1">
-                    {COLOR_PRESETS.map((c) => (
-                      <button
-                        key={c}
-                        type="button"
-                        onClick={() => setColor(c)}
-                        className={`h-7 w-7 rounded-xl transition-all cursor-pointer ${
-                          color === c ? 'ring-2 ring-slate-900 dark:ring-white scale-110' : 'opacity-70 hover:opacity-100'
-                        }`}
-                        style={{ backgroundColor: c }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Credenciais de Login: E-mail e Senha */}
-              <div className="p-3.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 space-y-3">
-                <p className="text-[11px] font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                  <Key className="h-3.5 w-3.5" />
-                  <span>Acesso ao Sistema (Login & Senha)</span>
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1 text-[11px]">
-                      E-mail Institucional *
-                    </label>
-                    <input
-                      id="input-collab-email"
-                      type="email"
-                      required
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="nome@beewave.com"
-                      className="clean-input h-9 w-full px-3 text-xs bg-white dark:bg-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1 text-[11px]">
-                      Senha de Acesso
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="input-collab-password"
-                        type={showPassword ? 'text' : 'password'}
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="clean-input h-9 w-full px-3 pr-8 text-xs font-mono bg-white dark:bg-slate-900"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                      >
-                        {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Nível de Acesso (Role) */}
-              <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Nível de Permissão
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRole('colaborador')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                      role === 'colaborador'
-                        ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900 font-bold'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <p className="text-xs">👤 Colaborador</p>
-                    <p className="text-[10px] opacity-80 font-normal mt-0.5">
-                      Acesso aos módulos de criação e tarefas
-                    </p>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRole('admin')}
-                    className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                      role === 'admin'
-                        ? 'border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900 font-bold'
-                        : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
-                    }`}
-                  >
-                    <p className="text-xs">👑 Administrador</p>
-                    <p className="text-[10px] opacity-80 font-normal mt-0.5">
-                      Acesso total a todas as configurações
-                    </p>
-                  </button>
-                </div>
-              </div>
-
-              {/* Modular Permissions (Only for non-admins) */}
-              {role === 'colaborador' && (
-                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-2">
-                  <p className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                    Módulos Liberados para este Colaborador:
-                  </p>
-                  <div className="grid grid-cols-2 gap-2 text-[11px]">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.tarefas}
-                        onChange={(e) => setPermissions({ ...permissions, tarefas: e.target.checked })}
-                        className="rounded text-slate-900 dark:text-white"
-                      />
-                      <span>Tarefas & Kanban</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.clientes}
-                        onChange={(e) => setPermissions({ ...permissions, clientes: e.target.checked })}
-                        className="rounded text-slate-900 dark:text-white"
-                      />
-                      <span>Perfis de Clientes</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.calendario}
-                        onChange={(e) => setPermissions({ ...permissions, calendario: e.target.checked })}
-                        className="rounded text-slate-900 dark:text-white"
-                      />
-                      <span>Calendário</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.noticias}
-                        onChange={(e) => setPermissions({ ...permissions, noticias: e.target.checked })}
-                        className="rounded text-slate-900 dark:text-white"
-                      />
-                      <span>Notícias & Tendências</span>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={permissions.prompts}
-                        onChange={(e) => setPermissions({ ...permissions, prompts: e.target.checked })}
-                        className="rounded text-slate-900 dark:text-white"
-                      />
-                      <span>Prompts & Notas</span>
-                    </label>
-                  </div>
-                </div>
-              )}
-
-              {/* Submit Buttons */}
-              <div className="pt-3 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-                >
-                  Cancelar
-                </button>
-                <button
-                  id="btn-save-collaborator"
-                  type="submit"
-                  className="flex-1 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 py-2.5 text-xs font-bold text-white dark:text-slate-900 shadow-md transition-all cursor-pointer"
-                >
-                  {editingUserId ? 'Salvar Alterações' : 'Cadastrar Colaborador'}
-                </button>
-              </div>
-            </form>
           </div>
-        </div>
-      )}
 
-      {/* Delete User Confirmation Modal */}
-      {userToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="clean-card w-full max-w-sm p-6 bg-white dark:bg-slate-900 space-y-4 shadow-2xl border border-slate-200 dark:border-slate-800 text-center">
-            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-500/10 text-rose-500 mx-auto">
-              <Trash2 className="h-6 w-6" />
+          <div>
+            <p className="t-label text-slate-500 mb-1.5">Cor no sistema</p>
+            <div className="flex items-center gap-2">
+              {CORES.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  aria-label={`Cor ${c}`}
+                  aria-pressed={color === c}
+                  className={`h-7 w-7 rounded-lg transition-transform cursor-pointer ${
+                    color === c
+                      ? 'ring-2 ring-offset-2 ring-slate-950 dark:ring-white ring-offset-white dark:ring-offset-[#0f1114]'
+                      : 'hover:scale-110'
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="col-cargo" className="block t-label text-slate-500 mb-1.5">
+                Cargo
+              </label>
+              <select
+                id="col-cargo"
+                value={jobTitle}
+                onChange={(e) => setJobTitle(e.target.value)}
+                className={`${campo} cursor-pointer`}
+              >
+                {CARGOS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                Remover {userToDelete.name}?
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Esta ação removerá o login e acesso deste colaborador. As tarefas atribuídas a ele continuarão no sistema.
-              </p>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setUserToDelete(null)}
-                className="flex-1 rounded-xl border border-slate-200 dark:border-slate-700 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  deleteUser(userToDelete.id);
-                  setUserToDelete(null);
-                }}
-                className="flex-1 rounded-xl bg-rose-600 hover:bg-rose-500 py-2 text-xs font-bold text-white transition-all cursor-pointer"
-              >
-                Sim, Remover
-              </button>
+              <label htmlFor="col-tel" className="block t-label text-slate-500 mb-1.5">
+                WhatsApp
+              </label>
+              <input
+                id="col-tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="(51) 99999-9999"
+                className={campo}
+              />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="col-email" className="block t-label text-slate-500 mb-1.5">
+                E-mail de login
+              </label>
+              <input
+                id="col-email"
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="nome@beewave.com"
+                className={campo}
+              />
+            </div>
+            <div>
+              <label htmlFor="col-senha" className="block t-label text-slate-500 mb-1.5">
+                Senha
+              </label>
+              <div className="relative">
+                <input
+                  id="col-senha"
+                  type={verSenha ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className={`${campo} pr-10 font-mono`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setVerSenha(!verSenha)}
+                  aria-label={verSenha ? 'Ocultar senha' : 'Mostrar senha'}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                >
+                  {verSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-5 border-t border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center gap-3">
+              {(['colaborador', 'admin'] as Role[]).map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => setRole(r)}
+                  aria-pressed={role === r}
+                  className={`flex-1 h-9 rounded-lg t-ui font-medium transition-colors cursor-pointer ${
+                    role === r
+                      ? 'bg-slate-950 text-white dark:bg-white dark:text-slate-950'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {r === 'admin' ? 'Administrador' : 'Colaborador'}
+                </button>
+              ))}
+            </div>
+
+            {role === 'admin' ? (
+              <p className="t-meta text-slate-500 dark:text-slate-400">
+                Administrador alcança todas as seções, inclusive Configurações e Lixeira.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                <p className="t-label text-slate-500">O que esta pessoa alcança</p>
+                {PERMISSOES.map((p) => (
+                  <label
+                    key={p.key}
+                    className="flex items-start gap-3 cursor-pointer select-none group/perm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={!!permissoes[p.key]}
+                      onChange={(e) =>
+                        setPermissoes((prev) => ({ ...prev, [p.key]: e.target.checked }))
+                      }
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-slate-950 focus:ring-slate-950 dark:focus:ring-white cursor-pointer"
+                    />
+                    <span className="min-w-0">
+                      <span className="block t-ui text-slate-900 dark:text-white">{p.label}</span>
+                      <span className="block t-meta text-slate-400 dark:text-slate-500">
+                        {p.descricao}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+                <p className="t-meta text-slate-400 dark:text-slate-500 pt-1">
+                  Início e Lixeira ficam sempre disponíveis. Configurações é só de administrador.
+                </p>
+              </div>
+            )}
+
+            <label className="flex items-center gap-2.5 cursor-pointer select-none pt-1">
+              <input
+                type="checkbox"
+                checked={ativo}
+                onChange={(e) => setAtivo(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 dark:border-slate-700 text-slate-950 focus:ring-slate-950 dark:focus:ring-white cursor-pointer"
+              />
+              <span className="t-ui text-slate-900 dark:text-white">
+                Ativo — pode entrar no sistema
+              </span>
+            </label>
+          </div>
         </div>
-      )}
+
+        <div className="flex items-center justify-end gap-3 px-6 py-4 shrink-0 border-t border-slate-200 dark:border-slate-800">
+          <Button variant="ghost" type="button" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="primary" type="submit" disabled={!name.trim() || !email.trim()}>
+            {user ? 'Salvar' : 'Cadastrar'}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+/* ========================================================================== */
+
+const ConfirmarRemocao: React.FC<{
+  user: User;
+  quantasPautas: number;
+  onClose: () => void;
+  onConfirm: () => void;
+}> = ({ user, quantasPautas, onClose, onConfirm }) => {
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center p-4">
+      <div className="absolute inset-0 bg-slate-950/55" onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Remover ${user.name}`}
+        className="relative w-full max-w-md bg-white dark:bg-[#0f1114] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 space-y-4"
+        style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <h2 className="font-display text-[18px] font-semibold tracking-tight text-slate-950 dark:text-white">
+          Remover {user.name.split(' ')[0]} da equipe?
+        </h2>
+        <p className="t-body text-slate-600 dark:text-slate-400">
+          {user.name} perde o acesso ao sistema.
+          {quantasPautas > 0 &&
+            ` As ${quantasPautas} pautas atribuídas a ${user.name.split(' ')[0]} ficam sem responsável.`}
+        </p>
+        <div className="flex items-center justify-end gap-3 pt-1">
+          <Button variant="ghost" onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button variant="danger" onClick={onConfirm}>
+            Remover
+          </Button>
+        </div>
+      </div>
     </div>
   );
 };

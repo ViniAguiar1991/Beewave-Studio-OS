@@ -84,8 +84,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       { id: 'tarefas', label: 'Tarefas', icon: ListChecks, perm: 'tarefas', badge: actionCount },
       { id: 'campanhas', label: 'Campanhas', icon: FolderKanban, perm: 'tarefas' },
       { id: 'clientes', label: 'Clientes', icon: Building2, perm: 'clientes' },
-      { id: 'colaboradores', label: 'Equipe', icon: Users, perm: 'clientes' },
-      { id: 'prompts', label: 'Prompts e notas', icon: FileText, perm: 'prompts' },
+      { id: 'colaboradores', label: 'Equipe', icon: Users, perm: 'equipe' },
+      { id: 'prompts', label: 'Prompts', icon: FileText, perm: 'prompts' },
     ] as NavItem[]
   ).filter((item) => (item.perm ? can(item.perm) : true));
 

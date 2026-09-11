@@ -143,7 +143,7 @@ export const DEFAULT_USERS: User[] = [
     role: 'colaborador',
     color: '#0ea5e9',
     joinedAt: '2025-03-01',
-    permissions: { tarefas: true, clientes: true, calendario: true, noticias: true, prompts: true },
+    permissions: { tarefas: true, clientes: true, equipe: true, prompts: true },
   },
   {
     id: 'u_rafa',
@@ -156,7 +156,7 @@ export const DEFAULT_USERS: User[] = [
     role: 'colaborador',
     color: '#8b5cf6',
     joinedAt: '2025-04-10',
-    permissions: { tarefas: true, calendario: true, noticias: true, prompts: true },
+    permissions: { tarefas: true, prompts: true },
   },
   {
     id: 'u_joao',
@@ -169,7 +169,7 @@ export const DEFAULT_USERS: User[] = [
     role: 'colaborador',
     color: '#10b981',
     joinedAt: '2025-05-15',
-    permissions: { tarefas: true, clientes: true, calendario: true, noticias: true, prompts: true },
+    permissions: { tarefas: true, clientes: true, equipe: true, prompts: true },
   },
   {
     id: 'u_cli_grao',
@@ -1524,7 +1524,7 @@ export const useAppStore = create<BeeWaveState>()(
           jobTitle: 'Colaborador',
           status: 'active',
           joinedAt: new Date().toISOString().split('T')[0],
-          permissions: { tarefas: true, clientes: true, calendario: true, noticias: true, prompts: true },
+          permissions: { tarefas: true, clientes: true, equipe: true, prompts: true },
           color: '#0ea5e9',
           ...data,
         };
