@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Paperclip, Check } from 'lucide-react';
+import { Paperclip, Check, Copy, Trash2, GripVertical } from 'lucide-react';
 import { Task, TaskView, CustomProperty } from '../../types';
 import {
   EvalContext,
@@ -24,6 +24,10 @@ interface TaskTableProps {
   onOpenTask: (taskId: string) => void;
   onResizeColumn: (columnId: string, width: number) => void;
   onSetCustomField: (taskId: string, propertyId: string, value: any) => void;
+  onDuplicateTask: (taskId: string) => void;
+  onDeleteTask: (taskId: string) => void;
+  /** Reordena as colunas arrastando o cabeçalho. */
+  onReorderColumns: (order: string[]) => void;
   emptyTitle: string;
   emptyHint: string;
 }
@@ -42,14 +46,34 @@ export const TaskTable: React.FC<TaskTableProps> = ({
   onOpenTask,
   onResizeColumn,
   onSetCustomField,
+  onDuplicateTask,
+  onDeleteTask,
+  onReorderColumns,
   emptyTitle,
   emptyHint,
 }) => {
+  const [dragCol, setDragCol] = useState<string | null>(null);
+  const [overCol, setOverCol] = useState<string | null>(null);
+
   const fields = allFields(ctx.properties);
   const columns = view.columnOrder
     .filter((id) => view.visibleColumns.includes(id))
     .map((id) => fields.find((f) => f.id === id))
     .filter((f): f is NonNullable<typeof f> => !!f);
+
+  const handleDropColumn = (alvo: string) => {
+    if (!dragCol || dragCol === alvo) return;
+    const ordem = columns.map((c) => c.id);
+    const de = ordem.indexOf(dragCol);
+    const para = ordem.indexOf(alvo);
+    if (de === -1 || para === -1) return;
+    const nova = [...ordem];
+    nova.splice(para, 0, ...nova.splice(de, 1));
+    // Colunas ocultas continuam na ordem salva, atrás das visíveis.
+    onReorderColumns([...nova, ...view.columnOrder.filter((id) => !nova.includes(id))]);
+    setDragCol(null);
+    setOverCol(null);
+  };
 
   const widthOf = (colId: string, fallback?: number) =>
     view.columnWidths[colId] || fallback || 150;
@@ -77,8 +101,18 @@ export const TaskTable: React.FC<TaskTableProps> = ({
                 width={widthOf(col.id, col.defaultWidth)}
                 minWidth={col.minWidth || 80}
                 onResize={(w) => onResizeColumn(col.id, w)}
+                isDragging={dragCol === col.id}
+                isOver={overCol === col.id}
+                onDragStart={() => setDragCol(col.id)}
+                onDragOver={() => setOverCol(col.id)}
+                onDragEnd={() => {
+                  setDragCol(null);
+                  setOverCol(null);
+                }}
+                onDrop={() => handleDropColumn(col.id)}
               />
             ))}
+            <th className="w-[76px] px-2" aria-label="Ações" />
           </tr>
         </thead>
 
@@ -107,6 +141,35 @@ export const TaskTable: React.FC<TaskTableProps> = ({
                     />
                   </td>
                 ))}
+
+                {/* Ações da linha. Só aparecem no hover: presentes quando
+                    precisa, invisíveis enquanto se lê a tabela. */}
+                <td className="px-2 py-2.5 align-top w-[76px]">
+                  <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDuplicateTask(task.id);
+                      }}
+                      aria-label="Duplicar tarefa"
+                      title="Duplicar"
+                      className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200/70 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onDeleteTask(task.id);
+                      }}
+                      aria-label="Excluir tarefa"
+                      title="Mover para a lixeira"
+                      className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </span>
+                </td>
               </tr>
             );
           })}
@@ -123,7 +186,24 @@ const HeaderCell: React.FC<{
   width: number;
   minWidth: number;
   onResize: (w: number) => void;
-}> = ({ label, width, minWidth, onResize }) => {
+  isDragging: boolean;
+  isOver: boolean;
+  onDragStart: () => void;
+  onDragOver: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
+}> = ({
+  label,
+  width,
+  minWidth,
+  onResize,
+  isDragging,
+  isOver,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDrop,
+}) => {
   const startX = useRef(0);
   const startW = useRef(0);
   const [dragging, setDragging] = useState(false);
@@ -150,10 +230,27 @@ const HeaderCell: React.FC<{
 
   return (
     <th
-      className="relative px-3 py-2 text-left t-label text-slate-500 dark:text-slate-400 select-none"
+      draggable={!dragging}
+      onDragStart={onDragStart}
+      onDragOver={(e) => {
+        e.preventDefault();
+        onDragOver();
+      }}
+      onDragEnd={onDragEnd}
+      onDrop={(e) => {
+        e.preventDefault();
+        onDrop();
+      }}
+      className={`group/th relative px-3 py-2 text-left t-label text-slate-500 dark:text-slate-400 select-none cursor-grab active:cursor-grabbing transition-colors ${
+        isDragging ? 'opacity-40' : ''
+      } ${isOver ? 'bg-slate-100 dark:bg-slate-800' : ''}`}
       style={{ width }}
+      title="Arraste para reordenar"
     >
-      {label}
+      <span className="inline-flex items-center gap-1">
+        <GripVertical className="h-3 w-3 shrink-0 text-slate-300 dark:text-slate-700 opacity-0 group-hover/th:opacity-100 transition-opacity" />
+        {label}
+      </span>
       <span
         onPointerDown={onPointerDown}
         role="separator"
@@ -202,21 +299,29 @@ const Cell: React.FC<{
       );
 
     case 'attachments': {
-      const n = (task.files || []).length;
-      const first = task.files?.find((f) => f.dataUrl || f.url);
-      if (!n) return <Muted>—</Muted>;
+      const arquivos = task.files || [];
+      const primeiro = arquivos.find((f) => f.dataUrl || f.url);
+      if (arquivos.length === 0) return <Muted>—</Muted>;
       return (
-        <span className="flex items-center gap-1.5">
-          {first ? (
+        <span className="inline-flex items-center gap-1.5">
+          {primeiro ? (
             <img
-              src={first.dataUrl || first.url}
+              src={primeiro.dataUrl || primeiro.url}
               alt=""
-              className="h-7 w-7 rounded object-cover border border-slate-200 dark:border-slate-700"
+              className="h-9 w-9 rounded object-cover border border-slate-200 dark:border-slate-700"
             />
           ) : (
-            <Paperclip className="h-3.5 w-3.5 text-slate-400" />
+            <span className="grid h-9 w-9 place-items-center rounded border border-slate-200 dark:border-slate-700 text-slate-400">
+              <Paperclip className="h-3.5 w-3.5" />
+            </span>
           )}
-          {n > 1 && <span className="text-slate-400 tabular-nums">{n}</span>}
+          {/* Contador só quando há mais de um: "+4" diz que é carrossel sem
+              precisar abrir a tarefa. */}
+          {arquivos.length > 1 && (
+            <span className="t-meta font-medium text-slate-500 dark:text-slate-400 tabular-nums">
+              +{arquivos.length - 1}
+            </span>
+          )}
         </span>
       );
     }

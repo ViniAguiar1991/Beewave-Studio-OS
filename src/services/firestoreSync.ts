@@ -9,7 +9,7 @@ import {
   onSnapshot,
 } from '../firebase';
 import { useAppStore } from '../store';
-import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig } from '../types';
+import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty } from '../types';
 import { uploadTaskFileToCloud, deleteTaskFileFromCloud } from './taskFileCloudSync';
 
 let isListening = false;
@@ -193,6 +193,37 @@ export function initFirestoreSync() {
       console.warn('Firestore adminPrompts listener note:', error.message);
     });
 
+    // 5b. Visões da Central de Tarefas publicadas para a equipe
+    const taskViewsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
+    onSnapshot(taskViewsDocRef, (docSnap) => {
+      if (!docSnap.exists()) return;
+      const dados = docSnap.data() as {
+        taskViews?: TaskView[];
+        customProperties?: CustomProperty[];
+      };
+      if (!dados?.taskViews?.length) return;
+
+      useAppStore.setState((state) => {
+        const publicadas = dados.taskViews || [];
+        // Visões que a pessoa criou e ainda não publicou continuam na máquina
+        // dela: receber a configuração da equipe não pode apagar rascunho.
+        const locaisNaoPublicadas = state.taskViews.filter(
+          (v) => !v.isShared && !publicadas.some((p) => p.id === v.id)
+        );
+        const todas = [...publicadas, ...locaisNaoPublicadas];
+        return {
+          taskViews: todas,
+          customProperties: dados.customProperties || state.customProperties,
+          activeViewId: todas.some((v) => v.id === state.activeViewId)
+            ? state.activeViewId
+            : todas[0]?.id || '',
+          viewsDirty: false,
+        };
+      });
+    }, (error) => {
+      console.warn('Listener de visões:', error.message);
+    });
+
     // 6. Listen to App Configuration (Agency, Categories, Plans, Statuses)
     const agencyConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
     onSnapshot(agencyConfigDocRef, (docSnap) => {
@@ -266,6 +297,37 @@ export async function syncTableViewConfigToCloud(config: TableViewConfig) {
 /**
  * Saves Admin System Prompts directly to Firestore
  */
+/**
+ * Publica as visões da Central de Tarefas para toda a equipe.
+ *
+ * Visão, regra de cor e coluna personalizada nascem no navegador de quem
+ * criou. Enquanto ficam só lá, cada pessoa monta as suas e ninguém vê o
+ * trabalho do outro — por isso existe a publicação explícita.
+ */
+export async function publishTaskViewsToCloud(
+  taskViews: TaskView[],
+  customProperties: CustomProperty[],
+  publishedBy: string
+) {
+  if (isCloudSyncDisabled()) return;
+  try {
+    const ref = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
+    await setDoc(
+      ref,
+      sanitizeForFirestore({
+        taskViews,
+        customProperties,
+        publishedBy,
+        publishedAt: new Date().toISOString(),
+      }),
+      { merge: true }
+    );
+  } catch (err) {
+    console.error('Erro ao publicar visões:', err);
+    throw err;
+  }
+}
+
 export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {
   if (isCloudSyncDisabled()) return;
   if (!prompts) return;

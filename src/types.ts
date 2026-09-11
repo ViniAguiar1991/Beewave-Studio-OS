@@ -549,5 +549,7 @@ export interface TaskView {
   groupBy?: string;
   /** Visões de sistema não podem ser apagadas. */
   isSystem?: boolean;
+  /** Publicada para a equipe: veio do Firestore, não só deste navegador. */
+  isShared?: boolean;
   createdAt: string;
 }

@@ -9,6 +9,7 @@ import {
   syncUserToCloud,
   deleteUserFromCloud,
   syncAdminPromptsToCloud,
+  publishTaskViewsToCloud,
   syncPromptsConfigToCloud,
 } from './services/firestoreSync';
 import {
@@ -1242,6 +1243,9 @@ interface BeeWaveState {
   taskViews: TaskView[];
   activeViewId: string;
   customProperties: CustomProperty[];
+  /** Há mudanças de visão ainda não publicadas para a equipe. */
+  viewsDirty: boolean;
+  publishTaskViews: () => Promise<void>;
   setActiveView: (viewId: string) => void;
   addTaskView: (view: TaskView) => void;
   updateTaskView: (viewId: string, data: Partial<TaskView>) => void;
@@ -1284,15 +1288,35 @@ export const useAppStore = create<BeeWaveState>()(
       taskViews: buildDefaultViews(),
       activeViewId: '',
       customProperties: [],
+      viewsDirty: false,
+
+      /**
+       * Publica a configuração de visões para toda a equipe.
+       * Enquanto ninguém publica, cada pessoa só enxerga as próprias.
+       */
+      publishTaskViews: async () => {
+        const { taskViews, customProperties } = get();
+        const autor = get().currentUser()?.name || 'Equipe';
+        await publishTaskViewsToCloud(
+          taskViews.map((v) => ({ ...v, isShared: true })),
+          customProperties,
+          autor
+        );
+        set((state) => ({
+          taskViews: state.taskViews.map((v) => ({ ...v, isShared: true })),
+          viewsDirty: false,
+        }));
+      },
 
       setActiveView: (activeViewId) => set({ activeViewId }),
 
       addTaskView: (view) =>
-        set((state) => ({ taskViews: [...state.taskViews, view], activeViewId: view.id })),
+        set((state) => ({ taskViews: [...state.taskViews, view], activeViewId: view.id, viewsDirty: true })),
 
       updateTaskView: (viewId, data) =>
         set((state) => ({
           taskViews: state.taskViews.map((v) => (v.id === viewId ? { ...v, ...data } : v)),
+          viewsDirty: true,
         })),
 
       deleteTaskView: (viewId) =>
@@ -1321,7 +1345,7 @@ export const useAppStore = create<BeeWaveState>()(
         }),
 
       addCustomProperty: (prop) =>
-        set((state) => ({ customProperties: [...state.customProperties, prop] })),
+        set((state) => ({ customProperties: [...state.customProperties, prop], viewsDirty: true })),
 
       updateCustomProperty: (id, data) =>
         set((state) => ({

@@ -566,7 +566,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
         </div>
 
         {/* MODAL BODY (Scrollable with generous breathing space) */}
-        <div className="flex-1 overflow-y-auto px-5 sm:px-7 py-6 space-y-6">
+        <div className="flex-1 overflow-y-auto px-5 sm:px-7 pt-6 pb-7 space-y-6">
           {/* Título. Textarea e não input: título longo precisa quebrar linha em
               vez de rolar na horizontal, e a altura acompanha o texto. */}
           <div className="w-full">
@@ -815,7 +815,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 >
                   Briefing & Direcionamento
                 </label>
-                <div className="rounded-lg border border-slate-300 dark:border-slate-700 p-3.5 focus-within:border-slate-900 dark:focus-within:border-white transition-colors flex-1 flex flex-col min-h-[260px]">
+                <div className="rounded-lg border border-slate-300 dark:border-slate-700 p-3.5 focus-within:border-slate-900 dark:focus-within:border-white transition-colors flex-1 flex flex-col min-h-[180px]">
                   <textarea
                     id="textarea-task-briefing"
                     value={briefingText}
@@ -825,7 +825,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                       handleFieldChange('briefingText', val);
                     }}
                     placeholder="Instruções, referências, direcionamento do cliente..."
-                    className="w-full flex-1 min-h-[220px] bg-transparent border-none outline-none resize-none t-body text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                    className="w-full flex-1 min-h-[150px] bg-transparent border-none outline-none resize-none t-body text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
                   />
                 </div>
               </div>
@@ -839,7 +839,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               >
                 Legenda
               </label>
-              <div className="rounded-lg border border-slate-300 dark:border-slate-700 p-3.5 sm:p-4 focus-within:border-slate-900 dark:focus-within:border-white transition-colors flex-1 flex flex-col min-h-[500px]">
+              <div className="rounded-lg border border-slate-300 dark:border-slate-700 p-3.5 sm:p-4 focus-within:border-slate-900 dark:focus-within:border-white transition-colors flex-1 flex flex-col min-h-[280px]">
                 <textarea
                   id="textarea-task-caption"
                   value={caption}
@@ -849,7 +849,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                     handleFieldChange('caption', val);
                   }}
                   placeholder="Escreva ou cole a legenda do post aqui..."
-                  className="w-full flex-1 min-h-[420px] bg-transparent border-none outline-none resize-none t-body text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+                  className="w-full flex-1 min-h-[240px] bg-transparent border-none outline-none resize-none t-body text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
                 />
 
                 {/* Copiar Legenda Button & Length Counter */}

@@ -13,6 +13,7 @@ import {
   Eye,
   EyeOff,
   Pencil,
+  Users,
 } from 'lucide-react';
 import {
   ColorRule,
@@ -50,6 +51,10 @@ interface ViewToolbarProps {
   onDeleteProperty: (id: string) => void;
   /** A barra de configuração vive atrás da engrenagem: o padrão é fechada. */
   open: boolean;
+  /** Há mudanças ainda não publicadas para a equipe. */
+  dirty: boolean;
+  onPublish: () => void;
+  publishing: boolean;
 }
 
 type PanelKey = 'filtro' | 'cores' | 'colunas' | 'ordem' | null;
@@ -75,6 +80,9 @@ export const ViewToolbar: React.FC<ViewToolbarProps> = ({
   onAddProperty,
   onDeleteProperty,
   open,
+  dirty,
+  onPublish,
+  publishing,
 }) => {
   const [panel, setPanel] = useState<PanelKey>(null);
   const [renaming, setRenaming] = useState(false);
@@ -113,15 +121,28 @@ export const ViewToolbar: React.FC<ViewToolbarProps> = ({
             </button>
           );
         })}
-        <button
-          onClick={onCreateView}
-          aria-label="Nova visão"
-          title="Nova visão"
-          className="grid h-8 w-8 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ml-1"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
       </div>
+
+      {/* As visões nascem locais. Esta faixa é o único caminho para a
+          configuração virar da equipe — sem ela, cada um veria só a sua. */}
+      {dirty && (
+        <div className="flex items-center gap-3 flex-wrap rounded-lg border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3.5 py-2.5">
+          <span className="t-ui text-amber-900 dark:text-amber-200">
+            Você mudou filtros, cores ou colunas. Por enquanto vale só neste navegador.
+          </span>
+          <Button
+            variant="primary"
+            size="sm"
+            icon={Users}
+            pending={publishing}
+            pendingLabel="Publicando…"
+            onClick={onPublish}
+            className="ml-auto"
+          >
+            Salvar para toda a equipe
+          </Button>
+        </div>
+      )}
 
       {renaming && (
         <RenameView

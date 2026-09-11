@@ -74,9 +74,30 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   const setTaskCustomField = useAppStore((s) => s.setTaskCustomField);
   const setTaskStatus = useAppStore((s) => s.setTaskStatus);
   const updateTask = useAppStore((s) => s.updateTask);
+  const duplicateTask = useAppStore((s) => s.duplicateTask);
+  const deleteTask = useAppStore((s) => s.deleteTask);
 
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
+
+  const viewsDirty = useAppStore((s) => s.viewsDirty);
+  const publishTaskViews = useAppStore((s) => s.publishTaskViews);
+
+  const handlePublish = async () => {
+    setPublishing(true);
+    setPublishError(null);
+    try {
+      await publishTaskViews();
+    } catch {
+      // A cota de escrita do Firestore pode estar esgotada; sem aviso, o
+      // usuário acharia que salvou.
+      setPublishError('Não foi possível salvar para a equipe. Tente de novo em instantes.');
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   /* ---------------------------------------------------------------------
    * Atalhos de filtro. Vários podem estar ligados ao mesmo tempo:
@@ -84,20 +105,36 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
    * normal do dia a dia, e exigir montar isso no construtor de condições
    * seria burocracia para algo de um clique.
    * ------------------------------------------------------------------- */
-  const [quickStatuses, setQuickStatuses] = useState<string[]>([]);
-  const [onlyMine, setOnlyMine] = useState(false);
+  /**
+   * Os atalhos ficam salvos por usuário e sobrevivem ao logout: quem trabalha
+   * filtrando "minhas, não iniciadas" não quer remontar isso toda manhã.
+   */
+  const chaveFiltros = `beewave_quick_filters_${currentUser?.id || 'anon'}`;
+
+  const [quickStatuses, setQuickStatuses] = useState<string[]>(() => {
+    try {
+      const salvo = localStorage.getItem(chaveFiltros);
+      return salvo ? JSON.parse(salvo) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(chaveFiltros, JSON.stringify(quickStatuses));
+    } catch {
+      /* sem persistência; não é crítico */
+    }
+  }, [chaveFiltros, quickStatuses]);
 
   const toggleStatus = (key: string) =>
     setQuickStatuses((prev) =>
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
 
-  const clearQuick = () => {
-    setQuickStatuses([]);
-    setOnlyMine(false);
-  };
-
-  const quickActive = quickStatuses.length > 0 || onlyMine;
+  const clearQuick = () => setQuickStatuses([]);
+  const quickActive = quickStatuses.length > 0;
 
   const view: TaskView = useMemo(
     () => taskViews.find((v) => v.id === activeViewId) || taskViews[0],
@@ -127,12 +164,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       // Status marcados somam entre si (OU); "minhas" restringe (E).
       if (quickStatuses.length > 0 && !quickStatuses.includes(t.status)) return false;
 
-      if (onlyMine && currentUser) {
-        const mine =
-          t.assigneeId === currentUser.id || t.assigneeIds?.includes(currentUser.id);
-        if (!mine) return false;
-      }
-
       if (!term) return true;
       const client = clients.find((c) => c.id === t.clientId);
       return (
@@ -143,7 +174,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     });
 
     return sortTasks(filtered, view.sort, ctx);
-  }, [tasks, view, ctx, search, clients, quickStatuses, onlyMine, currentUser]);
+  }, [tasks, view, ctx, search, clients, quickStatuses]);
 
   if (!view) return null;
 
@@ -193,6 +224,9 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         ctx={ctx}
         resultCount={visibleTasks.length}
         open={settingsOpen}
+        dirty={viewsDirty}
+        publishing={publishing}
+        onPublish={handlePublish}
         onUpdateView={(data) => updateTaskView(view.id, data)}
         onSelectView={setActiveView}
         onCreateView={() => addTaskView(newView(`Visão ${taskViews.length + 1}`))}
@@ -204,31 +238,22 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         onDeleteProperty={deleteCustomProperty}
       />
 
+      {publishError && (
+        <p role="alert" className="t-ui text-rose-700 dark:text-rose-400">
+          {publishError}
+        </p>
+      )}
+
       {/* Atalhos de filtro: um clique, acumulam entre si */}
       <div className="flex items-center gap-2 flex-wrap">
-        <Chip label="Todas" active={!quickActive} onClick={clearQuick} />
-
-        <Chip
-          label="Minhas tarefas"
-          active={onlyMine}
-          onClick={() => setOnlyMine((v) => !v)}
-        />
-
-        <span className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-0.5" aria-hidden="true" />
-
-        {statuses.map((st) => {
-          const color = getColor(hexToColorKey(st.color));
-          const active = quickStatuses.includes(st.key);
-          return (
-            <Chip
-              key={st.key}
-              label={st.label}
-              active={active}
-              dot={color.solid}
-              onClick={() => toggleStatus(st.key)}
-            />
-          );
-        })}
+        {statuses.map((st) => (
+          <Chip
+            key={st.key}
+            label={st.label}
+            active={quickStatuses.includes(st.key)}
+            onClick={() => toggleStatus(st.key)}
+          />
+        ))}
 
         {quickActive && (
           <button
@@ -329,6 +354,14 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             })
           }
           onSetCustomField={setTaskCustomField}
+          onDuplicateTask={duplicateTask}
+          onDeleteTask={(id) => {
+            const t = tasks.find((x) => x.id === id);
+            if (window.confirm(`Mover "${t?.title || 'esta tarefa'}" para a lixeira?`)) {
+              deleteTask(id);
+            }
+          }}
+          onReorderColumns={(columnOrder) => updateTaskView(view.id, { columnOrder })}
           emptyTitle={
             search || quickActive
               ? 'Nenhuma tarefa com esses filtros'
@@ -372,9 +405,8 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
 const Chip: React.FC<{
   label: string;
   active: boolean;
-  dot?: string;
   onClick: () => void;
-}> = ({ label, active, dot, onClick }) => (
+}> = ({ label, active, onClick }) => (
   <button
     onClick={onClick}
     aria-pressed={active}
@@ -384,12 +416,6 @@ const Chip: React.FC<{
         : 'bg-transparent text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-400 dark:hover:border-slate-500'
     }`}
   >
-    {dot && (
-      <span
-        className={`h-1.5 w-1.5 rounded-full shrink-0 ${active ? 'bg-current opacity-60' : dot}`}
-        aria-hidden="true"
-      />
-    )}
     {label}
   </button>
 );

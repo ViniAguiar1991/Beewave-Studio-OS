@@ -215,6 +215,14 @@ export const BUILTIN_FIELDS: FieldDef[] = [
   { id: 'timeSpent', label: 'Tempo gasto (min)', type: 'number', columnar: true, minWidth: 90, defaultWidth: 130 },
 ];
 
+/**
+ * Valor especial de filtro que significa "o usuário logado agora".
+ *
+ * Guardar o id da pessoa dentro da visão não serviria: a visão "Minhas
+ * tarefas" é compartilhada, e cada um precisa ver as suas.
+ */
+export const ME = '@me';
+
 export const customFieldId = (propertyId: string) => `custom:${propertyId}`;
 export const isCustomField = (fieldId: string) => fieldId.startsWith('custom:');
 export const customPropertyId = (fieldId: string) => fieldId.slice('custom:'.length);
@@ -336,7 +344,13 @@ export const readField = (task: Task, fieldId: string, ctx: EvalContext): unknow
     case 'category':
       return task.categoryId || null;
     case 'assignee':
-      return task.assigneeId || task.assigneeIds?.[0] || null;
+      // Lista completa, não só o primeiro: uma tarefa com dois responsáveis
+      // precisa aparecer em "Minhas tarefas" para os dois.
+      return task.assigneeIds?.length
+        ? task.assigneeIds
+        : task.assigneeId
+          ? [task.assigneeId]
+          : [];
     case 'status':
       return task.status || null;
     case 'postDate':
@@ -382,8 +396,13 @@ export const readLabel = (task: Task, fieldId: string, ctx: EvalContext): string
   switch (fieldId) {
     case 'client':
       return ctx.clients.find((c) => c.id === raw)?.company || '';
-    case 'assignee':
-      return ctx.users.find((u) => u.id === raw)?.name || '';
+    case 'assignee': {
+      const ids = Array.isArray(raw) ? raw : [raw];
+      const nomes = ids
+        .map((id) => ctx.users.find((u) => u.id === id)?.name)
+        .filter(Boolean) as string[];
+      return nomes.join(', ');
+    }
     case 'category':
       return ctx.categories.find((c) => c.id === raw)?.name || '';
     case 'status':
@@ -411,7 +430,16 @@ export const evaluateCondition = (
   ctx: EvalContext
 ): boolean => {
   const raw = readField(task, cond.field, ctx);
-  const { operator: op, value } = cond;
+  const op = cond.operator;
+
+  // ME vira o id de quem está logado no momento da avaliação.
+  const resolveMe = (v: unknown): unknown =>
+    v === ME
+      ? ctx.currentUserId || ''
+      : Array.isArray(v)
+        ? v.map((x) => (x === ME ? ctx.currentUserId || '' : x))
+        : v;
+  const value = resolveMe(cond.value);
 
   const empty =
     raw === null ||
@@ -431,9 +459,15 @@ export const evaluateCondition = (
       return raw !== true;
 
     case 'is':
-      return String(raw ?? '') === String(value ?? '');
+      // Campo de lista (responsáveis, seleção múltipla): "é" quer dizer
+      // "está entre", senão a comparação viraria texto contra texto.
+      return Array.isArray(raw)
+        ? raw.map(String).includes(String(value ?? ''))
+        : String(raw ?? '') === String(value ?? '');
     case 'isNot':
-      return String(raw ?? '') !== String(value ?? '');
+      return Array.isArray(raw)
+        ? !raw.map(String).includes(String(value ?? ''))
+        : String(raw ?? '') !== String(value ?? '');
 
     case 'isAnyOf': {
       const set = asArray(value);
@@ -592,9 +626,7 @@ export const newView = (name: string, mode: TaskView['mode'] = 'list'): TaskView
  * agora editáveis e removíveis como qualquer outra.
  */
 export const buildDefaultViews = (): TaskView[] => {
-  const todas = newView('Todas as tarefas');
-  todas.isSystem = true;
-  todas.colorRules = [
+  const regras: ColorRule[] = [
     {
       id: rid('rule'),
       name: 'Atrasada',
@@ -632,31 +664,27 @@ export const buildDefaultViews = (): TaskView[] => {
       enabled: true,
       filter: {
         match: 'all',
-        conditions: [{ id: rid('cond'), field: 'status', operator: 'isAnyOf', value: ['aprovado', 'postado'] }],
+        conditions: [
+          { id: rid('cond'), field: 'status', operator: 'isAnyOf', value: ['aprovado', 'postado'] },
+        ],
       },
     },
   ];
 
-  const precisaDeMim = newView('Precisa de mim');
-  precisaDeMim.filter = {
-    match: 'any',
-    conditions: [
-      { id: rid('cond'), field: 'status', operator: 'is', value: 'alterar' },
-      { id: rid('cond'), field: 'clientRequest', operator: 'isTrue' },
-      { id: rid('cond'), field: 'postDate', operator: 'isOverdue' },
-    ],
-  };
-  precisaDeMim.sort = { field: 'postDate', direction: 'asc' };
-  precisaDeMim.colorRules = todas.colorRules;
+  const todas = newView('Todas as tarefas');
+  todas.isSystem = true;
+  todas.colorRules = regras;
 
-  const producao = newView('Em produção', 'kanban');
-  producao.filter = {
+  // "Minhas tarefas" é visão de verdade, não atalho: filtra pelo responsável
+  // logado. O filtro é resolvido na hora da avaliação, por isso o valor
+  // especial ME — o id do usuário muda a cada sessão.
+  const minhas = newView('Minhas tarefas');
+  minhas.isSystem = true;
+  minhas.filter = {
     match: 'all',
-    conditions: [
-      { id: rid('cond'), field: 'status', operator: 'isNoneOf', value: ['postado'] },
-    ],
+    conditions: [{ id: rid('cond'), field: 'assignee', operator: 'is', value: ME }],
   };
-  producao.colorRules = todas.colorRules;
+  minhas.colorRules = JSON.parse(JSON.stringify(regras));
 
-  return [todas, precisaDeMim, producao];
+  return [todas, minhas];
 };
