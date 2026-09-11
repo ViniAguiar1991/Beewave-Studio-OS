@@ -2889,45 +2889,34 @@ export const useAppStore = create<BeeWaveState>()(
       })),
       onRehydrateStorage: () => (state) => {
         if (state) {
-          // Do not force admin auto-login when unauthenticated
+          // Lido uma vez, antes de qualquer semeadura: os blocos de conteúdo
+          // de demonstração abaixo dependem disso e um preenche o que o
+          // outro checaria.
+          const primeiraCarga = !state.tasks || state.tasks.length === 0;
+
+          // Clientes de demonstração entram só na primeira carga, quando
+          // não existe cliente nenhum.
+          //
+          // Antes c_emely, c_perfetto e c_melatti eram reinseridos a cada
+          // rehydrate se não estivessem na lista. Como o Vinicius cadastrou
+          // o Perfetto e o Melatti de verdade com outros ids, a agência ficou
+          // com duas pastas de cada — e as versões de demonstração voltavam
+          // sozinhas toda vez que ele apagava, arrastando junto as pautas
+          // fictícias para as contas do painel.
           if (!state.clients || state.clients.length === 0) {
             state.clients = DEFAULT_CLIENTS;
           } else {
-            const hasEmely = state.clients.some((c) => c.id === 'c_emely');
-            if (!hasEmely) {
-              const emelyClient = DEFAULT_CLIENTS.find((c) => c.id === 'c_emely');
-              if (emelyClient) state.clients = [emelyClient, ...state.clients];
-            } else {
-              state.clients = state.clients.map((c) => {
-                if (c.id === 'c_emely' && !c.strategyDocument) {
-                  return { ...c, strategyDocument: EMELY_STRATEGY_DOCUMENT };
-                }
-                return c;
-              });
-            }
-          }
-          // Ensure Perfetto and Melatti clients exist
-          const hasPerfetto = state.clients?.some((c) => c.id === 'c_perfetto');
-          if (!hasPerfetto) {
-            const perf = DEFAULT_CLIENTS.find((c) => c.id === 'c_perfetto');
-            if (perf && state.clients) state.clients.push(perf);
-          } else if (state.clients) {
+            // Numa base que já existe, só completamos o que ficou faltando
+            // em clientes que continuam lá. Nada é criado de volta.
             state.clients = state.clients.map((c) => {
-              if (c.id === 'c_perfetto' && (!c.contractServices || c.contractServices.length === 0)) {
+              if (c.id === 'c_emely' && !c.strategyDocument) {
+                return { ...c, strategyDocument: EMELY_STRATEGY_DOCUMENT };
+              }
+              if (c.id === 'c_perfetto' && !c.contractServices?.length) {
                 const perf = DEFAULT_CLIENTS.find((x) => x.id === 'c_perfetto');
                 return { ...c, contractServices: perf?.contractServices, name: 'Branca' };
               }
-              return c;
-            });
-          }
-
-          const hasMelatti = state.clients?.some((c) => c.id === 'c_melatti');
-          if (!hasMelatti) {
-            const mel = DEFAULT_CLIENTS.find((c) => c.id === 'c_melatti');
-            if (mel && state.clients) state.clients.push(mel);
-          } else if (state.clients) {
-            state.clients = state.clients.map((c) => {
-              if (c.id === 'c_melatti' && (!c.contractServices || c.contractServices.length === 0)) {
+              if (c.id === 'c_melatti' && !c.contractServices?.length) {
                 const mel = DEFAULT_CLIENTS.find((x) => x.id === 'c_melatti');
                 return { ...c, contractServices: mel?.contractServices };
               }
@@ -2939,18 +2928,13 @@ export const useAppStore = create<BeeWaveState>()(
             state.campaigns = DEFAULT_CAMPAIGNS;
           }
 
-          // Ensure Perfetto sample tasks exist
-          if (state.tasks) {
-            const hasPerfTask = state.tasks.some((t) => t.clientId === 'c_perfetto');
-            if (!hasPerfTask) {
-              const perfTasks = DEFAULT_TASKS.filter((t) => t.clientId === 'c_perfetto');
-              state.tasks = [...perfTasks, ...state.tasks];
-            }
-            const hasMelattiTask = state.tasks.some((t) => t.clientId === 'c_melatti');
-            if (!hasMelattiTask) {
-              const melattiTasks = DEFAULT_TASKS.filter((t) => t.clientId === 'c_melatti');
-              state.tasks = [...melattiTasks, ...state.tasks];
-            }
+          // Pautas de demonstração: mesma regra dos clientes. Só entram numa
+          // base vazia. Enquanto a checagem era "existe alguma pauta do
+          // c_perfetto?", apagar todas elas trazia todas de volta no reload.
+          if (primeiraCarga && state.tasks) {
+            state.tasks = DEFAULT_TASKS.filter(
+              (t) => t.clientId === 'c_perfetto' || t.clientId === 'c_melatti'
+            );
           }
 
           // Ensure Emely approval tasks exist for demo/testing.
@@ -2960,7 +2944,7 @@ export const useAppStore = create<BeeWaveState>()(
           // recarregar a página reinseria a MESMA tarefa com o mesmo id fixo —
           // duplicando a pauta no portal, quebrando as keys do React e, com a
           // sync ligada, empurrando a duplicata para o Firestore.
-          if (state.tasks) {
+          if (primeiraCarga && state.tasks) {
             const existingIds = new Set(state.tasks.map((t) => t.id));
             const hasEmelyTask = existingIds.has('task-emely-aprov-1');
             if (!hasEmelyTask) {

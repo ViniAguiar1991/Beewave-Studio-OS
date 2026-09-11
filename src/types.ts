@@ -67,7 +67,7 @@ export interface MonthlyReport {
   reach?: number;
   impressions?: number;
   postsPublished?: number;
-  engagementRate: number; // e.g. 4.8 (%)
+  engagementRate?: number; // e.g. 4.8 (%) — ausente quando não foi medido
   reachTotal?: number; // e.g. 48500
   postsCount?: number; // e.g. 16
   linkClicks?: number; // e.g. 1240
