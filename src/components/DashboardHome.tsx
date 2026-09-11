@@ -4,17 +4,19 @@ import {
   ArrowRight,
   Check,
   Trash2,
-  RotateCw,
+  CalendarClock,
   MessageSquareWarning,
   Lightbulb,
-  Clock,
+  PartyPopper,
+  Settings2,
 } from 'lucide-react';
-import { startOfWeek, endOfWeek, parseISO, isWithinInterval, format } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAppStore, useCurrentUser } from '../store';
 import { Task, Client, TaskStatus } from '../types';
 import { getColor, hexToColorKey } from '../lib/taskViews';
 import { formatFriendlyDate, isTaskDelayed } from '../utils/dateFormatter';
+import { resumoDaSemana, saudacao, fraseDoDia, mascoteDoDia, ResumoCliente } from '../lib/weekPlan';
 import { Button, BlockHeader, EmptyState } from './ui';
 
 interface DashboardHomeProps {
@@ -24,21 +26,18 @@ interface DashboardHomeProps {
   onSelectTab: (tab: string) => void;
 }
 
-const IN_PRODUCTION = ['nao_iniciado', 'em_andamento', 'planejamento', 'aguardar', 'urgencia'];
-
 const getDay = (t: Task) => (t.postDate || t.date || '').split('T')[0] || null;
 
 /**
- * Início — o painel de operação da agência.
+ * Início — o retrato da semana.
  *
- * A tela responde, nesta ordem: o que trava agora, o que sai esta semana e
- * como está cada cliente. Antes ela abria com dois cards de "ritmo de produção"
- * contendo caixas de métrica dentro de caixas, barra de progresso e um grid de
- * cards de cliente com mais caixas dentro — muito container, pouca decisão.
+ * A pergunta que a tela responde é "o que ainda falta entregar até domingo?".
+ * Antes ela repetia a lista de tarefas que já existe em Tarefas, o que fazia
+ * a pessoa ler a mesma informação duas vezes e decidir nada.
  *
- * O bloco "Precisa de você" existia como necessidade e não como tela: pedidos
- * de ajuste e sugestões de pauta enviadas pelo cliente chegavam na lista geral
- * de tarefas sem nenhuma marca, misturados com pauta criada pela equipe.
+ * Aqui os containers são justificados: cada bloco é uma decisão fechada — o
+ * que falta planejar, o que está em produção, o que espera o cliente. Não é
+ * caixa para enfeitar, é caixa para separar decisões.
  */
 export const DashboardHome: React.FC<DashboardHomeProps> = ({
   onSelectTask,
@@ -50,86 +49,29 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   const tasks = useAppStore((s) => s.tasks);
   const statuses = useAppStore((s) => s.statuses);
   const notes = useAppStore((s) => s.notes);
+  const mascotImages = useAppStore((s) => s.mascotImages);
   const addNote = useAppStore((s) => s.addNote);
   const toggleNote = useAppStore((s) => s.toggleNote);
   const deleteNote = useAppStore((s) => s.deleteNote);
-  const generateMonthlyTasksFromContract = useAppStore((s) => s.generateMonthlyTasksFromContract);
   const currentUser = useCurrentUser();
 
   const [newNoteText, setNewNoteText] = useState('');
-  const [notice, setNotice] = useState<string | null>(null);
 
-  const greeting = useMemo(() => {
-    const h = new Date().getHours();
-    if (h >= 5 && h < 12) return 'Bom dia';
-    if (h >= 12 && h < 18) return 'Boa tarde';
-    return 'Boa noite';
-  }, []);
   const firstName = currentUser?.name?.split(' ')[0] || 'Criativo';
+  const mascote = useMemo(() => mascoteDoDia(mascotImages), [mascotImages]);
+  const frase = useMemo(() => fraseDoDia(), []);
 
-  const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const semana = useMemo(() => resumoDaSemana(clients, tasks), [clients, tasks]);
 
-  /* ------------------------------------------------------------------------
-   * A fila da equipe: o que está parado esperando alguém da Beewave.
-   * ---------------------------------------------------------------------- */
-  const queue = useMemo(() => {
-    const changeRequests = tasks.filter((t) => t.status === 'alterar');
-    const suggestions = tasks.filter(
-      (t) => t.clientRequest && t.status === 'nao_iniciado'
-    );
-    const late = tasks.filter(
+  /** A fila da equipe: o que está parado esperando alguém da Beewave. */
+  const fila = useMemo(() => {
+    const ajustes = tasks.filter((t) => t.status === 'alterar');
+    const sugestoes = tasks.filter((t) => t.clientRequest && t.status === 'nao_iniciado');
+    const atrasadas = tasks.filter(
       (t) => isTaskDelayed(t) && t.status !== 'alterar' && !t.clientRequest
     );
-    return { changeRequests, suggestions, late };
+    return { ajustes, sugestoes, atrasadas, total: ajustes.length + sugestoes.length + atrasadas.length };
   }, [tasks]);
-
-  const queueTotal = queue.changeRequests.length + queue.suggestions.length + queue.late.length;
-
-  /* ------------------------------------------------------------------------
-   * A semana corrente.
-   * ---------------------------------------------------------------------- */
-  const week = useMemo(() => {
-    const now = new Date();
-    const start = startOfWeek(now, { weekStartsOn: 1 });
-    const end = endOfWeek(now, { weekStartsOn: 1 });
-
-    const inWeek = tasks.filter((t) => {
-      const d = getDay(t);
-      if (!d) return false;
-      try {
-        return isWithinInterval(parseISO(d), { start, end });
-      } catch {
-        return false;
-      }
-    });
-
-    return {
-      start,
-      end,
-      total: inWeek.length,
-      toProduce: inWeek.filter((t) => IN_PRODUCTION.includes(t.status)).length,
-      awaitingClient: inWeek.filter((t) => t.status === 'em_aprovacao').length,
-      done: inWeek.filter((t) => t.status === 'aprovado' || t.status === 'postado').length,
-    };
-  }, [tasks]);
-
-  const totalAwaitingClient = tasks.filter((t) => t.status === 'em_aprovacao').length;
-
-  const headline = useMemo(() => {
-    const parts: string[] = [];
-    if (queueTotal > 0) {
-      parts.push(`${queueTotal} ${queueTotal === 1 ? 'pauta precisa' : 'pautas precisam'} da equipe`);
-    }
-    if (totalAwaitingClient > 0) {
-      parts.push(`${totalAwaitingClient} na mão do cliente`);
-    }
-    if (parts.length === 0) {
-      return week.total > 0
-        ? `Nada travado. ${week.total} ${week.total === 1 ? 'publicação' : 'publicações'} programadas para esta semana.`
-        : 'Nada travado e nenhuma publicação programada para esta semana.';
-    }
-    return `${parts.join(' · ')}.`;
-  }, [queueTotal, totalAwaitingClient, week.total]);
 
   const handleAddNote = (e: React.FormEvent) => {
     e.preventDefault();
@@ -138,44 +80,146 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
     setNewNoteText('');
   };
 
-  const handleGenerate = (client: Client) => {
-    const count = generateMonthlyTasksFromContract(client.id);
-    setNotice(
-      count > 0
-        ? `${count} ${count === 1 ? 'pauta criada' : 'pautas criadas'} para ${client.company} a partir do contrato.`
-        : `Nenhum serviço recorrente pendente para ${client.company} neste mês.`
-    );
-    window.setTimeout(() => setNotice(null), 5000);
-  };
+  const clientesComPendencia = semana.clientes
+    .filter((c) => c.faltaPlanejar > 0)
+    .sort((a, b) => b.faltaPlanejar - a.faltaPlanejar);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 pb-16">
-      {/* 1. Onde estou, como está, o que faço */}
-      <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-5 border-b border-slate-200 dark:border-slate-800 pb-6">
-        <div className="min-w-0">
-          <h1 className="font-display text-[30px] sm:text-[34px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
-            {greeting}, {firstName}
-          </h1>
-          <p className="t-body text-slate-600 dark:text-slate-400 mt-1.5">{headline}</p>
+    <div className="mx-auto max-w-6xl space-y-6 pb-16">
+      {/* ---------------------------------------------------------------
+          Saudação
+         --------------------------------------------------------------- */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 overflow-hidden">
+        <div className="flex items-end gap-5 px-6 sm:px-8 pt-7">
+          {mascote ? (
+            <img
+              src={mascote}
+              alt=""
+              className="hidden sm:block h-[132px] w-auto object-contain object-bottom -mb-7 shrink-0 select-none"
+              draggable={false}
+            />
+          ) : (
+            <MascoteVazio onConfigure={() => onSelectTab('admin')} />
+          )}
+
+          <div className="min-w-0 flex-1 pb-7">
+            <h1 className="font-display text-[30px] sm:text-[34px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
+              {saudacao()}, {firstName}
+            </h1>
+            <p className="t-body text-slate-600 dark:text-slate-400 mt-1">{frase}</p>
+          </div>
+
+          <div className="hidden sm:block pb-7 shrink-0">
+            <Button variant="primary" icon={Plus} onClick={onNewTask}>
+              Nova tarefa
+            </Button>
+          </div>
         </div>
-        <Button variant="primary" icon={Plus} onClick={onNewTask} className="shrink-0 self-start sm:self-auto">
+      </section>
+
+      <div className="sm:hidden">
+        <Button variant="primary" icon={Plus} onClick={onNewTask} className="w-full">
           Nova tarefa
         </Button>
-      </header>
+      </div>
 
-      {notice && (
-        <p role="status" className="t-body text-emerald-700 dark:text-emerald-400 -mt-6">
-          {notice}
-        </p>
+      {/* ---------------------------------------------------------------
+          A semana
+         --------------------------------------------------------------- */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 space-y-6">
+        <div className="flex items-baseline justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="t-label text-slate-500">Esta semana</h2>
+            <p className="t-meta text-slate-400 dark:text-slate-500 mt-1">
+              {format(semana.inicio, "d 'de' MMM", { locale: ptBR })} a{' '}
+              {format(semana.fim, "d 'de' MMM", { locale: ptBR })}
+            </p>
+          </div>
+          <button
+            onClick={() => onSelectTab('tarefas')}
+            className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
+          >
+            Abrir tarefas
+          </button>
+        </div>
+
+        {semana.semContratos ? (
+          <SemContrato onConfigure={() => onSelectTab('clientes')} />
+        ) : semana.tudoEmDia ? (
+          <TudoEmDia total={semana.concluido} />
+        ) : (
+          <>
+            <BarraDaSemana semana={semana} />
+
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5 pt-1">
+              <Metrica
+                valor={semana.faltaPlanejar}
+                rotulo="Falta planejar"
+                detalhe="contratado e ainda sem pauta"
+                destaque={semana.faltaPlanejar > 0 ? 'amber' : undefined}
+              />
+              <Metrica valor={semana.emProducao} rotulo="Em produção" detalhe="com a equipe" />
+              <Metrica
+                valor={semana.comCliente}
+                rotulo="Com o cliente"
+                detalhe="aguardando aprovação"
+                destaque={semana.comCliente > 0 ? 'sky' : undefined}
+              />
+              <Metrica
+                valor={semana.concluido}
+                rotulo="Concluídas"
+                detalhe="aprovadas ou no ar"
+                destaque={semana.concluido > 0 ? 'emerald' : undefined}
+              />
+            </div>
+          </>
+        )}
+      </section>
+
+      {/* ---------------------------------------------------------------
+          Onde falta planejar
+         --------------------------------------------------------------- */}
+      {clientesComPendencia.length > 0 && (
+        <section className="rounded-2xl border border-amber-300 dark:border-amber-900/70 bg-amber-50/60 dark:bg-amber-950/20 p-6 sm:p-7 space-y-4">
+          <div className="flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-amber-700 dark:text-amber-500" />
+            <h2 className="t-label text-amber-800 dark:text-amber-400">Falta planejar esta semana</h2>
+          </div>
+
+          <ul className="space-y-2.5">
+            {clientesComPendencia.map((c) => (
+              <li key={c.clientId}>
+                <button
+                  onClick={() => onSelectClient(c.clientId)}
+                  className="w-full flex items-center gap-3 text-left group cursor-pointer"
+                >
+                  <span className="t-lead font-medium text-slate-900 dark:text-white group-hover:underline underline-offset-4">
+                    {c.nome}
+                  </span>
+                  <span className="t-body text-slate-600 dark:text-slate-400">
+                    {c.faltaPlanejar === 1
+                      ? 'falta 1 publicação'
+                      : `faltam ${c.faltaPlanejar} publicações`}
+                  </span>
+                  <span className="ml-auto t-meta text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
+                    {c.planejado} de {c.contratado}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
-      {/* 2. A fila da equipe. Único bloco que pede ação. */}
-      <section className="space-y-5">
+      {/* ---------------------------------------------------------------
+          Fila da equipe
+         --------------------------------------------------------------- */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 space-y-5">
         <BlockHeader
           title="Precisa de você"
-          count={queueTotal > 0 ? `${queueTotal} ${queueTotal === 1 ? 'pauta' : 'pautas'}` : undefined}
+          count={fila.total > 0 ? `${fila.total} ${fila.total === 1 ? 'pauta' : 'pautas'}` : undefined}
           action={
-            queueTotal > 0 ? (
+            fila.total > 0 ? (
               <Button variant="secondary" size="sm" onClick={() => onSelectTab('tarefas')}>
                 Abrir tarefas
                 <ArrowRight className="h-3.5 w-3.5" />
@@ -184,40 +228,37 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
           }
         />
 
-        {queueTotal === 0 ? (
+        {fila.total === 0 ? (
           <EmptyState
             title="Nada travado no momento"
-            hint="Pedidos de ajuste, sugestões enviadas pelos clientes e pautas atrasadas aparecem aqui assim que surgirem."
+            hint="Ajustes pedidos pelo cliente, sugestões vindas do portal e pautas atrasadas aparecem aqui."
           />
         ) : (
-          <div className="space-y-8">
-            <QueueGroup
-              label="Ajustes pedidos pelo cliente"
-              hint="O cliente devolveu — refazer e reenviar."
-              tone="text-rose-700 dark:text-rose-400"
-              icon={MessageSquareWarning}
-              tasks={queue.changeRequests}
-              clientById={clientById}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <CartaoFila
+              titulo="Ajustes do cliente"
+              icone={MessageSquareWarning}
+              tom="rose"
+              tarefas={fila.ajustes}
+              clients={clients}
               statuses={statuses}
               onSelectTask={onSelectTask}
             />
-            <QueueGroup
-              label="Sugestões de pauta do cliente"
-              hint="Chegaram pelo portal e ainda não foram avaliadas."
-              tone="text-amber-700 dark:text-amber-500"
-              icon={Lightbulb}
-              tasks={queue.suggestions}
-              clientById={clientById}
+            <CartaoFila
+              titulo="Sugestões do portal"
+              icone={Lightbulb}
+              tom="amber"
+              tarefas={fila.sugestoes}
+              clients={clients}
               statuses={statuses}
               onSelectTask={onSelectTask}
             />
-            <QueueGroup
-              label="Atrasadas"
-              hint="A data de publicação já passou."
-              tone="text-slate-700 dark:text-slate-300"
-              icon={Clock}
-              tasks={queue.late}
-              clientById={clientById}
+            <CartaoFila
+              titulo="Atrasadas"
+              icone={CalendarClock}
+              tom="slate"
+              tarefas={fila.atrasadas}
+              clients={clients}
               statuses={statuses}
               onSelectTask={onSelectTask}
             />
@@ -225,105 +266,10 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         )}
       </section>
 
-      {/* 3. A semana, em texto. Sem caixa dentro de caixa, sem barra decorativa. */}
-      <section className="space-y-5">
-        <BlockHeader
-          title="Esta semana"
-          count={`${format(week.start, "d 'de' MMM", { locale: ptBR })} a ${format(week.end, "d 'de' MMM", { locale: ptBR })}`}
-          action={
-            <button
-              onClick={() => onSelectTab('tarefas')}
-              className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
-            >
-              Abrir tarefas
-            </button>
-          }
-        />
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-8 gap-y-6">
-          <Stat value={week.total} label="Publicações na semana" />
-          <Stat value={week.toProduce} label="Ainda para produzir" />
-          <Stat value={week.awaitingClient} label="Na mão do cliente" />
-          <Stat value={week.done} label="Aprovadas" />
-        </div>
-      </section>
-
-      {/* 4. Situação por cliente. Uma linha por cliente, não um card. */}
-      <section className="space-y-5">
-        <BlockHeader
-          title="Clientes"
-          count={`${clients.length} ${clients.length === 1 ? 'conta ativa' : 'contas ativas'}`}
-          action={
-            <button
-              onClick={() => onSelectTab('clientes')}
-              className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
-            >
-              Ver todos
-            </button>
-          }
-        />
-
-        {clients.length === 0 ? (
-          <EmptyState
-            title="Nenhum cliente cadastrado"
-            hint="Cadastre o primeiro cliente para começar a programar pautas e liberar o portal de aprovação."
-          />
-        ) : (
-          <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
-            {clients.map((client) => {
-              const list = tasks.filter((t) => t.clientId === client.id);
-              const producing = list.filter((t) => IN_PRODUCTION.includes(t.status)).length;
-              const awaiting = list.filter((t) => t.status === 'em_aprovacao').length;
-              const adjusting = list.filter((t) => t.status === 'alterar').length;
-
-              const today = new Date().toISOString().split('T')[0];
-              const next = list
-                .filter((t) => {
-                  const d = getDay(t);
-                  return !!d && d >= today && t.status !== 'postado';
-                })
-                .sort((a, b) => (getDay(a) || '').localeCompare(getDay(b) || ''))[0];
-
-              return (
-                <li key={client.id} className="py-4 flex items-center gap-4 flex-wrap sm:flex-nowrap">
-                  <button
-                    onClick={() => onSelectClient(client.id)}
-                    className="flex items-center gap-3 min-w-0 flex-1 text-left group cursor-pointer"
-                  >
-                    <span className="min-w-0">
-                      <span className="block t-lead font-medium text-slate-900 dark:text-white truncate group-hover:underline underline-offset-4 decoration-slate-300">
-                        {client.company}
-                      </span>
-                      <span className="block t-meta text-slate-500 dark:text-slate-400 truncate">
-                        {next
-                          ? `Próxima publicação ${formatFriendlyDate(getDay(next)).toLowerCase()}`
-                          : 'Sem publicação agendada'}
-                      </span>
-                    </span>
-                  </button>
-
-                  <div className="flex items-center gap-5 shrink-0 t-meta tabular-nums">
-                    <ClientStat n={producing} label="produzindo" />
-                    <ClientStat n={awaiting} label="c/ cliente" highlight={awaiting > 0} />
-                    <ClientStat n={adjusting} label="ajuste" alert={adjusting > 0} />
-                  </div>
-
-                  <button
-                    onClick={() => handleGenerate(client)}
-                    title="Cria as pautas do mês a partir dos serviços recorrentes do contrato"
-                    className="shrink-0 inline-flex items-center gap-1.5 t-ui text-slate-500 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
-                  >
-                    <RotateCw className="h-3.5 w-3.5" />
-                    <span className="hidden lg:inline">Gerar pautas</span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      {/* 5. Notas rápidas */}
-      <section className="space-y-5">
+      {/* ---------------------------------------------------------------
+          Notas
+         --------------------------------------------------------------- */}
+      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 space-y-4">
         <BlockHeader
           title="Notas"
           count={
@@ -388,97 +334,197 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
 
 /* ========================================================================== */
 
-const Stat: React.FC<{ value: number; label: string }> = ({ value, label }) => (
-  <div>
-    <p className="font-display text-[28px] font-semibold tracking-tight text-slate-950 dark:text-white tabular-nums leading-none">
-      {value}
-    </p>
-    <p className="t-meta text-slate-500 dark:text-slate-400 mt-1.5">{label}</p>
-  </div>
-);
-
-const ClientStat: React.FC<{
-  n: number;
-  label: string;
-  highlight?: boolean;
-  alert?: boolean;
-}> = ({ n, label, highlight, alert }) => (
-  <span className="hidden sm:flex items-baseline gap-1.5">
-    <span
-      className={`font-semibold ${
-        alert
-          ? 'text-rose-700 dark:text-rose-400'
-          : highlight
-            ? 'text-amber-700 dark:text-amber-500'
-            : 'text-slate-900 dark:text-white'
-      }`}
-    >
-      {n}
+const MascoteVazio: React.FC<{ onConfigure: () => void }> = ({ onConfigure }) => (
+  <button
+    onClick={onConfigure}
+    title="Enviar imagens do mascote nas configurações"
+    className="hidden sm:grid h-[104px] w-[104px] -mb-7 shrink-0 place-items-center rounded-t-2xl border border-b-0 border-dashed border-slate-300 dark:border-slate-700 text-slate-400 hover:text-slate-600 hover:border-slate-400 dark:hover:text-slate-300 transition-colors cursor-pointer"
+  >
+    <span className="text-center px-2">
+      <Settings2 className="h-5 w-5 mx-auto mb-1" />
+      <span className="block t-meta leading-tight">Enviar mascote</span>
     </span>
-    <span className="text-slate-400 dark:text-slate-500">{label}</span>
-  </span>
+  </button>
 );
 
 /**
- * Um grupo da fila. Some inteiro quando está vazio — um bloco com "0 itens"
- * ocuparia espaço sem informar nada.
+ * Barra segmentada da semana. Cada faixa é um estágio, na ordem em que a
+ * pauta caminha: falta planejar → produção → cliente → concluída.
  */
-const QueueGroup: React.FC<{
-  label: string;
-  hint: string;
-  tone: string;
-  icon: React.ComponentType<{ className?: string }>;
-  tasks: Task[];
-  clientById: Map<string, Client>;
-  statuses: TaskStatus[];
-  onSelectTask: (id: string) => void;
-}> = ({ label, hint, tone, icon: Icon, tasks, clientById, statuses, onSelectTask }) => {
-  if (tasks.length === 0) return null;
+const BarraDaSemana: React.FC<{ semana: ReturnType<typeof resumoDaSemana> }> = ({ semana }) => {
+  const total = Math.max(semana.contratado, semana.planejado, 1);
+  const faixas = [
+    { valor: semana.concluido, cor: 'bg-emerald-500', nome: 'Concluídas' },
+    { valor: semana.comCliente, cor: 'bg-sky-500', nome: 'Com o cliente' },
+    { valor: semana.emProducao, cor: 'bg-slate-400 dark:bg-slate-500', nome: 'Em produção' },
+    { valor: semana.faltaPlanejar, cor: 'bg-amber-400', nome: 'Falta planejar' },
+  ].filter((f) => f.valor > 0);
+
+  return (
+    <div className="space-y-2.5">
+      <p className="t-body text-slate-700 dark:text-slate-300">
+        <strong className="font-semibold text-slate-950 dark:text-white tabular-nums">
+          {semana.concluido} de {Math.max(semana.contratado, semana.planejado)}
+        </strong>{' '}
+        {semana.contratado > 0
+          ? 'publicações contratadas já estão aprovadas'
+          : 'publicações programadas já estão aprovadas'}
+      </p>
+
+      <div
+        className="flex h-2.5 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"
+        role="img"
+        aria-label={faixas.map((f) => `${f.nome}: ${f.valor}`).join(', ')}
+      >
+        {faixas.map((f) => (
+          <span
+            key={f.nome}
+            className={`${f.cor} transition-all duration-300`}
+            style={{ width: `${(f.valor / total) * 100}%` }}
+            title={`${f.nome}: ${f.valor}`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const Metrica: React.FC<{
+  valor: number;
+  rotulo: string;
+  detalhe: string;
+  destaque?: 'amber' | 'sky' | 'emerald';
+}> = ({ valor, rotulo, detalhe, destaque }) => {
+  const cor = destaque
+    ? {
+        amber: 'text-amber-700 dark:text-amber-500',
+        sky: 'text-sky-700 dark:text-sky-400',
+        emerald: 'text-emerald-700 dark:text-emerald-400',
+      }[destaque]
+    : 'text-slate-950 dark:text-white';
 
   return (
     <div>
-      <div className="flex items-baseline gap-2.5 flex-wrap">
-        <span className={`inline-flex items-center gap-2 t-label ${tone}`}>
-          <Icon className="h-3.5 w-3.5" />
-          {label}
-        </span>
-        <span className="t-meta text-slate-400 dark:text-slate-500">
-          {tasks.length} · {hint}
+      <p className={`font-display text-[30px] font-semibold tracking-tight tabular-nums leading-none ${cor}`}>
+        {valor}
+      </p>
+      <p className="t-ui font-medium text-slate-800 dark:text-slate-200 mt-2">{rotulo}</p>
+      <p className="t-meta text-slate-400 dark:text-slate-500 mt-0.5">{detalhe}</p>
+    </div>
+  );
+};
+
+const TudoEmDia: React.FC<{ total: number }> = ({ total }) => (
+  <div className="flex items-center gap-4 py-3">
+    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400">
+      <PartyPopper className="h-5 w-5" />
+    </span>
+    <div>
+      <p className="t-lead font-semibold text-slate-950 dark:text-white">
+        Todas as demandas da semana concluídas
+      </p>
+      <p className="t-body text-slate-600 dark:text-slate-400 mt-0.5">
+        {total > 0
+          ? `${total} ${total === 1 ? 'publicação aprovada' : 'publicações aprovadas'}, nada pendente com a equipe nem com os clientes.`
+          : 'Nada pendente com a equipe nem com os clientes.'}
+      </p>
+    </div>
+  </div>
+);
+
+/**
+ * Estado inicial honesto: sem serviços recorrentes cadastrados não existe
+ * meta, e a tela diz o que fazer em vez de mostrar zero sem explicação.
+ */
+const SemContrato: React.FC<{ onConfigure: () => void }> = ({ onConfigure }) => (
+  <div className="py-2">
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5 opacity-40 pointer-events-none select-none">
+      <Metrica valor={0} rotulo="Falta planejar" detalhe="contratado e ainda sem pauta" />
+      <Metrica valor={0} rotulo="Em produção" detalhe="com a equipe" />
+      <Metrica valor={0} rotulo="Com o cliente" detalhe="aguardando aprovação" />
+      <Metrica valor={0} rotulo="Concluídas" detalhe="aprovadas ou no ar" />
+    </div>
+
+    <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">
+      <p className="t-lead font-medium text-slate-900 dark:text-white">
+        Cadastre os serviços recorrentes para esta conta funcionar
+      </p>
+      <p className="t-body text-slate-600 dark:text-slate-400 mt-1 max-w-xl">
+        Ao dizer que a Daxx tem 3 posts por semana e a Perfetto 4, o painel passa a
+        mostrar quanto falta planejar em cada cliente — hoje ele não tem com o que comparar.
+      </p>
+      <div className="mt-4">
+        <Button variant="secondary" size="sm" onClick={onConfigure}>
+          Abrir clientes
+          <ArrowRight className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  </div>
+);
+
+const CartaoFila: React.FC<{
+  titulo: string;
+  icone: React.ComponentType<{ className?: string }>;
+  tom: 'rose' | 'amber' | 'slate';
+  tarefas: Task[];
+  clients: Client[];
+  statuses: TaskStatus[];
+  onSelectTask: (id: string) => void;
+}> = ({ titulo, icone: Icone, tom, tarefas, clients, statuses, onSelectTask }) => {
+  const cores = {
+    rose: 'text-rose-700 dark:text-rose-400',
+    amber: 'text-amber-700 dark:text-amber-500',
+    slate: 'text-slate-600 dark:text-slate-400',
+  }[tom];
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-800 p-4">
+      <div className="flex items-center gap-2 pb-3 border-b border-slate-100 dark:border-slate-800">
+        <Icone className={`h-3.5 w-3.5 ${cores}`} />
+        <h3 className={`t-label ${cores}`}>{titulo}</h3>
+        <span className="ml-auto t-meta text-slate-400 dark:text-slate-500 tabular-nums">
+          {tarefas.length}
         </span>
       </div>
 
-      <ul className="mt-3 divide-y divide-slate-200 dark:divide-slate-800 border-y border-slate-200 dark:border-slate-800">
-        {tasks.map((task) => {
-          const client = clientById.get(task.clientId);
-          // Mesma cor que a Central de Tarefas usa: a do cadastro de status.
-          const status = statuses.find((s) => s.key === task.status);
-          const badge = getColor(hexToColorKey(status?.color));
-          const day = getDay(task);
-          return (
-            <li key={task.id}>
-              <button
-                onClick={() => onSelectTask(task.id)}
-                className="w-full flex items-center gap-4 py-3.5 text-left group cursor-pointer"
-              >
-                <span className="min-w-0 flex-1">
-                  <span className="block t-lead font-medium text-slate-900 dark:text-white truncate group-hover:underline underline-offset-4 decoration-slate-300">
+      {tarefas.length === 0 ? (
+        <p className="t-meta text-slate-300 dark:text-slate-700 py-4">Nada aqui</p>
+      ) : (
+        <ul className="divide-y divide-slate-100 dark:divide-slate-800/70">
+          {tarefas.slice(0, 4).map((task) => {
+            const client = clients.find((c) => c.id === task.clientId);
+            const status = statuses.find((s) => s.key === task.status);
+            const cor = getColor(hexToColorKey(status?.color));
+            const dia = getDay(task);
+            return (
+              <li key={task.id}>
+                <button
+                  onClick={() => onSelectTask(task.id)}
+                  className="w-full py-2.5 text-left group cursor-pointer"
+                >
+                  <span className="block t-ui font-medium text-slate-900 dark:text-white line-clamp-2 group-hover:underline underline-offset-4">
                     {task.selectedHeadline || task.headline || task.title}
                   </span>
-                  <span className="block t-meta text-slate-500 dark:text-slate-400 truncate">
-                    {client?.company || 'Sem cliente'}
-                    {day && ` · ${formatFriendlyDate(day)}`}
+                  <span className="flex items-center gap-1.5 mt-1">
+                    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${cor.solid}`} />
+                    <span className="t-meta text-slate-500 dark:text-slate-400 truncate">
+                      {client?.company || 'Sem cliente'}
+                      {dia && ` · ${formatFriendlyDate(dia)}`}
+                    </span>
                   </span>
-                </span>
-                <span className={`shrink-0 hidden sm:inline-flex items-center gap-1.5 t-meta ${badge.text}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${badge.solid}`} />
-                  {status?.label || task.status}
-                </span>
-                <ArrowRight className="h-4 w-4 shrink-0 text-slate-300 dark:text-slate-600 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" />
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {tarefas.length > 4 && (
+        <p className="t-meta text-slate-400 dark:text-slate-500 pt-2.5">
+          e mais {tarefas.length - 4}
+        </p>
+      )}
     </div>
   );
 };

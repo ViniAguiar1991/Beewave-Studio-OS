@@ -16,8 +16,10 @@ import {
   Eye,
   Shield,
   Edit2,
+  ImagePlus,
 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { compressImage } from '../utils/imageCompressor';
 import { AdminSystemPrompts, TaskStatus } from '../types';
 import { TrashView } from './TrashView';
 
@@ -40,6 +42,40 @@ export const AdminSettingsView: React.FC = () => {
   const moveStatus = useAppStore((s) => s.moveStatus);
   const togglePermission = useAppStore((s) => s.togglePermission);
   const resetAllData = useAppStore((s) => s.resetAllData);
+  const mascotImages = useAppStore((s) => s.mascotImages);
+  const addMascotImages = useAppStore((s) => s.addMascotImages);
+  const removeMascotImage = useAppStore((s) => s.removeMascotImage);
+  const [mascotError, setMascotError] = React.useState<string | null>(null);
+
+  /**
+   * As poses são comprimidas antes de entrar: PNG de render 3D chega com
+   * vários MB e estouraria o armazenamento local do navegador.
+   */
+  const handleMascotUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const escolhidas = Array.from(e.target.files || []) as File[];
+    e.target.value = '';
+    if (escolhidas.length === 0) return;
+    setMascotError(null);
+
+    const naoImagem = escolhidas.find((f) => !f.type.startsWith('image/'));
+    if (naoImagem) {
+      setMascotError(`"${naoImagem.name}" não é uma imagem.`);
+      return;
+    }
+
+    try {
+      const prontas = await Promise.all(
+        escolhidas.map((f) => compressImage(f, 480, 480, 0.82))
+      );
+      await addMascotImages(prontas);
+    } catch {
+      // Pode ser falha ao ler o arquivo ou ao publicar para a equipe; sem
+      // aviso, o usuário acharia que salvou para todos.
+      setMascotError(
+        'As poses ficaram salvas neste navegador, mas não foi possível publicar para a equipe. Tente de novo mais tarde.'
+      );
+    }
+  };
 
   // Admin hidden system prompts
   const adminPrompts = useAppStore((s) => s.adminPrompts);
@@ -334,6 +370,59 @@ export const AdminSettingsView: React.FC = () => {
               onChange={(e) => setAgencyName(e.target.value)}
               className="clean-input h-10 w-full px-3 text-xs font-bold"
             />
+          </div>
+
+          {/* Mascote da saudação */}
+          <div className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-3">
+            <h3 className="t-label text-slate-500">Mascote do Início</h3>
+            <p className="t-body text-slate-600 dark:text-slate-400 max-w-xl">
+              Envie poses em PNG com fundo transparente. O sistema mostra uma por dia,
+              alternando — a mesma para toda a equipe.
+            </p>
+
+            {mascotImages.length > 0 && (
+              <ul className="flex flex-wrap gap-3 pt-1">
+                {mascotImages.map((img, i) => (
+                  <li key={i} className="relative group">
+                    <img
+                      src={img}
+                      alt={`Pose ${i + 1}`}
+                      className="h-24 w-24 rounded-lg object-contain bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeMascotImage(i)}
+                      aria-label={`Remover pose ${i + 1}`}
+                      className="absolute -top-1.5 -right-1.5 grid h-6 w-6 place-items-center rounded-full bg-slate-950 text-white border-2 border-white dark:border-slate-900 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity cursor-pointer"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <div className="flex items-center gap-3 flex-wrap pt-1">
+              <label className="inline-flex items-center gap-2 h-10 px-4 rounded-lg border border-slate-300 dark:border-slate-700 t-ui font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                <ImagePlus className="h-4 w-4" />
+                {mascotImages.length === 0 ? 'Enviar poses' : 'Enviar mais'}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={handleMascotUpload}
+                />
+              </label>
+              {mascotError && (
+                <span role="alert" className="t-meta text-rose-700 dark:text-rose-400">
+                  {mascotError}
+                </span>
+              )}
+              <span className="t-meta text-slate-400 dark:text-slate-500">
+                {mascotImages.length} de 12
+              </span>
+            </div>
           </div>
 
           <div className="pt-6 border-t border-slate-200 dark:border-slate-800 space-y-3">

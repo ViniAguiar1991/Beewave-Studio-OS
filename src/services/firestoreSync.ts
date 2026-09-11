@@ -193,6 +193,18 @@ export function initFirestoreSync() {
       console.warn('Firestore adminPrompts listener note:', error.message);
     });
 
+    // 5a. Mascote compartilhado
+    const brandingDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
+    onSnapshot(brandingDocRef, (docSnap) => {
+      if (!docSnap.exists()) return;
+      const dados = docSnap.data() as { mascotImages?: string[] };
+      if (Array.isArray(dados?.mascotImages)) {
+        useAppStore.setState({ mascotImages: dados.mascotImages });
+      }
+    }, (error) => {
+      console.warn('Listener do mascote:', error.message);
+    });
+
     // 5b. Visões da Central de Tarefas publicadas para a equipe
     const taskViewsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
     onSnapshot(taskViewsDocRef, (docSnap) => {
@@ -326,6 +338,19 @@ export async function publishTaskViewsToCloud(
     console.error('Erro ao publicar visões:', err);
     throw err;
   }
+}
+
+/**
+ * Publica as poses do mascote para toda a equipe.
+ *
+ * Documento próprio, e não junto do agencyConfig: são imagens em base64 e o
+ * limite do Firestore é 1 MB por documento — misturá-las com o resto da
+ * configuração derrubaria as duas coisas de uma vez.
+ */
+export async function syncMascotToCloud(mascotImages: string[]) {
+  if (isCloudSyncDisabled()) return;
+  const ref = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
+  await setDoc(ref, sanitizeForFirestore({ mascotImages }), { merge: true });
 }
 
 export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {

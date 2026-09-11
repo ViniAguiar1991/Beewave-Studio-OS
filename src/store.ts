@@ -10,6 +10,7 @@ import {
   deleteUserFromCloud,
   syncAdminPromptsToCloud,
   publishTaskViewsToCloud,
+  syncMascotToCloud,
   syncPromptsConfigToCloud,
 } from './services/firestoreSync';
 import {
@@ -1098,6 +1099,10 @@ interface BeeWaveState {
   agencyName: string;
   logoDataUrl: string | null;
   iconDataUrl: string | null;
+  /** Poses do mascote usadas na saudação do Início. Uma por dia. */
+  mascotImages: string[];
+  addMascotImages: (dataUrls: string[]) => Promise<void>;
+  removeMascotImage: (index: number) => Promise<void>;
   toggleDarkMode: () => void;
   setDarkMode: (enabled: boolean) => void;
   setAgencyName: (name: string) => void;
@@ -1397,6 +1402,22 @@ export const useAppStore = create<BeeWaveState>()(
       agencyName: 'BeeWave',
       logoDataUrl: null,
       iconDataUrl: null,
+      mascotImages: [],
+
+      addMascotImages: (dataUrls) => {
+        // Teto de 12: são imagens em base64 e há limite tanto no navegador
+        // quanto no documento do Firestore.
+        const proximas = [...get().mascotImages, ...dataUrls].slice(0, 12);
+        set({ mascotImages: proximas });
+        return syncMascotToCloud(proximas);
+      },
+
+      removeMascotImage: (index) => {
+        const proximas = get().mascotImages.filter((_, i) => i !== index);
+        set({ mascotImages: proximas });
+        return syncMascotToCloud(proximas);
+      },
+
 
       toggleDarkMode: () => {
         const next = !get().darkMode;
@@ -3030,6 +3051,9 @@ export const useAppStore = create<BeeWaveState>()(
           }
           if (!state.customProperties) {
             state.customProperties = [];
+          }
+          if (!Array.isArray(state.mascotImages)) {
+            state.mascotImages = [];
           }
           if (!state.activeViewId || !state.taskViews.some((v) => v.id === state.activeViewId)) {
             state.activeViewId = state.taskViews[0].id;
