@@ -276,7 +276,6 @@ export const CampaignsView: React.FC<CampaignsViewProps> = ({
                 tabColor={getColor(st.cor).solid}
                 eyebrow={cliente?.company || 'Sem cliente'}
                 title={campanha.title}
-                subtitle={campanha.description}
                 onClick={() => setAberta(campanha.id)}
                 stats={[
                   { valor: pautas.length, rotulo: 'pautas' },

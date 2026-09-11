@@ -65,7 +65,7 @@ export const AdminSettingsView: React.FC = () => {
 
     try {
       const prontas = await Promise.all(
-        escolhidas.map((f) => compressImage(f, 480, 480, 0.82))
+        escolhidas.map((f) => compressImage(f, 560, 560, 1, true))
       );
       await addMascotImages(prontas);
     } catch {

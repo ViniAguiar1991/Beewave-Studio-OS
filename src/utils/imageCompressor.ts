@@ -6,7 +6,15 @@ export async function compressImage(
   file: File,
   maxWidth = 1080,
   maxHeight = 1080,
-  quality = 0.72
+  quality = 0.72,
+  /**
+   * Mantém o fundo transparente e exporta PNG.
+   *
+   * O caminho padrão pinta branco e salva em JPEG, que não tem canal alfa —
+   * ótimo para foto, péssimo para recorte. Um mascote PNG salvo assim ganhava
+   * um retângulo branco atrás.
+   */
+  preserveTransparency = false
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     try {
@@ -37,16 +45,20 @@ export async function compressImage(
               return;
             }
 
-            // Fill canvas with white background to handle PNG transparency correctly
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, width, height);
+            if (!preserveTransparency) {
+              // Fundo branco para o JPEG, que não guarda transparência.
+              ctx.fillStyle = '#ffffff';
+              ctx.fillRect(0, 0, width, height);
+            }
 
             // Clean rendering
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, width, height);
 
-            let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            let compressedDataUrl = preserveTransparency
+              ? canvas.toDataURL('image/png')
+              : canvas.toDataURL('image/jpeg', quality);
 
             // If image is still larger than 120KB (~160,000 base64 chars), do a fast second-pass reduction
             if (compressedDataUrl.length > 160000) {
@@ -57,10 +69,14 @@ export async function compressImage(
               canvas2.height = Math.max(1, secondHeight);
               const ctx2 = canvas2.getContext('2d');
               if (ctx2) {
-                ctx2.fillStyle = '#ffffff';
-                ctx2.fillRect(0, 0, secondWidth, secondHeight);
+                if (!preserveTransparency) {
+                  ctx2.fillStyle = '#ffffff';
+                  ctx2.fillRect(0, 0, secondWidth, secondHeight);
+                }
                 ctx2.drawImage(img, 0, 0, secondWidth, secondHeight);
-                compressedDataUrl = canvas2.toDataURL('image/jpeg', 0.6);
+                compressedDataUrl = preserveTransparency
+                  ? canvas2.toDataURL('image/png')
+                  : canvas2.toDataURL('image/jpeg', 0.6);
               }
             }
 

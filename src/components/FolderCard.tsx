@@ -41,7 +41,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
   const Wrapper = onClick ? 'button' : 'div';
 
   return (
-    <div className="relative group">
+    <div className="relative group h-full">
       {/* A aba da pasta. Largura fixa e menor que o corpo, encostada à
           esquerda, para ler como pasta e não como cabeçalho de card. */}
       <span
@@ -51,7 +51,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
 
       <Wrapper
         onClick={onClick}
-        className={`relative w-full text-left rounded-xl rounded-tl-none border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 transition-colors ${
+        className={`relative w-full h-full flex flex-col text-left rounded-xl rounded-tl-none border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 transition-colors ${
           onClick
             ? 'hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer'
             : ''
@@ -78,7 +78,7 @@ export const FolderCard: React.FC<FolderCardProps> = ({
         </div>
 
         {stats.length > 0 && (
-          <div className="flex items-baseline gap-5 mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+          <div className="flex items-baseline gap-5 mt-auto pt-4 border-t border-slate-100 dark:border-slate-800">
             {stats.map((s) => (
               <span key={s.rotulo}>
                 <span
