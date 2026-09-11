@@ -16,12 +16,22 @@ export const GlobalTimerWidget: React.FC<GlobalTimerWidgetProps> = ({ onOpenTask
   const deleteTask = useAppStore((s) => s.deleteTask);
   const dockedTimerTaskId = useAppStore((s) => s.dockedTimerTaskId);
   const setDockedTimerTaskId = useAppStore((s) => s.setDockedTimerTaskId);
+  const dismissedTimerTaskId = useAppStore((s) => s.dismissedTimerTaskId);
+  const dismissTimerWidget = useAppStore((s) => s.dismissTimerWidget);
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  // Active or docked task
-  const runningTask = tasks.find((t) => !!t.timerStartedAt);
-  const targetTaskId = runningTask ? runningTask.id : dockedTimerTaskId;
+  // Active or docked task. A dispensada é ignorada: se o usuário fechou o
+  // aviso, ele não pode ressurgir só porque a nuvem ainda não registrou a
+  // parada.
+  const runningTask = tasks.find(
+    (t) => !!t.timerStartedAt && t.id !== dismissedTimerTaskId
+  );
+  const targetTaskId = runningTask
+    ? runningTask.id
+    : dockedTimerTaskId === dismissedTimerTaskId
+      ? null
+      : dockedTimerTaskId;
   const currentTask = tasks.find((t) => t.id === targetTaskId);
   const client = currentTask ? clients.find((c) => c.id === currentTask.clientId) : null;
 
@@ -37,7 +47,7 @@ export const GlobalTimerWidget: React.FC<GlobalTimerWidgetProps> = ({ onOpenTask
 
     const diff = Math.round((Date.now() - currentTask.timerStartedAt) / 1000);
     // Sanity check: if elapsed is more than 10 hours from a forgotten background session, reset
-    if (diff > 36000) {
+    if (diff > 28800) {
       stopTimer(currentTask.id);
       resetTimer(currentTask.id);
       setDockedTimerTaskId(null);
@@ -47,7 +57,7 @@ export const GlobalTimerWidget: React.FC<GlobalTimerWidgetProps> = ({ onOpenTask
 
     const update = () => {
       const currentDiff = Math.round((Date.now() - (currentTask.timerStartedAt || Date.now())) / 1000);
-      if (currentDiff > 36000) {
+      if (currentDiff > 28800) {
         stopTimer(currentTask.id);
         resetTimer(currentTask.id);
         setDockedTimerTaskId(null);
@@ -207,9 +217,9 @@ export const GlobalTimerWidget: React.FC<GlobalTimerWidgetProps> = ({ onOpenTask
                   id="btn-global-timer-close"
                   onClick={() => {
                     if (isRunning) stopTimer(currentTask.id);
-                    setDockedTimerTaskId(null);
+                    dismissTimerWidget(currentTask.id);
                   }}
-                  title="Fechar (X)"
+                  title="Fechar"
                   className="grid h-7 w-7 place-items-center rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer ml-0.5"
                 >
                   <X className="h-3.5 w-3.5" />

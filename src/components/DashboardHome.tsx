@@ -16,7 +16,14 @@ import { useAppStore, useCurrentUser } from '../store';
 import { Task, Client, TaskStatus } from '../types';
 import { getColor, hexToColorKey } from '../lib/taskViews';
 import { formatFriendlyDate, isTaskDelayed } from '../utils/dateFormatter';
-import { resumoDaSemana, saudacao, fraseDoDia, mascoteDoDia, ResumoCliente } from '../lib/weekPlan';
+import {
+  resumoDaSemana,
+  cargaPorDia,
+  saudacao,
+  fraseDoDia,
+  mascoteDoDia,
+  DiaDaSemana,
+} from '../lib/weekPlan';
 import { Button, BlockHeader, EmptyState } from './ui';
 
 interface DashboardHomeProps {
@@ -62,6 +69,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   const frase = useMemo(() => fraseDoDia(), []);
 
   const semana = useMemo(() => resumoDaSemana(clients, tasks), [clients, tasks]);
+  const carga = useMemo(() => cargaPorDia(tasks), [tasks]);
 
   /** A fila da equipe: o que está parado esperando alguém da Beewave. */
   const fila = useMemo(() => {
@@ -87,40 +95,60 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-16">
       {/* ---------------------------------------------------------------
-          Saudação
+          Saudação e carga da semana, lado a lado
          --------------------------------------------------------------- */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 overflow-hidden">
-        <div className="flex items-end gap-5 px-6 sm:px-8 pt-7">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+        {/* Mascote: container próprio, ele preenche de baixo para cima */}
+        <section className="lg:col-span-4 relative rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-b from-amber-50 to-amber-100/60 dark:from-slate-800/60 dark:to-slate-900 overflow-hidden min-h-[300px] flex flex-col">
+          <div className="relative z-10 px-6 pt-6">
+            <p className="t-label text-amber-800/70 dark:text-amber-500/80">
+              {format(new Date(), "EEEE, d 'de' MMMM", { locale: ptBR })}
+            </p>
+            <h1 className="font-display text-[28px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight mt-1.5">
+              {saudacao()}, {firstName}
+            </h1>
+          </div>
+
           {mascote ? (
             <img
               src={mascote}
               alt=""
-              className="hidden sm:block h-[132px] w-auto object-contain object-bottom -mb-7 shrink-0 select-none"
+              className="relative z-0 mt-auto w-full max-h-[230px] object-contain object-bottom select-none"
               draggable={false}
             />
           ) : (
             <MascoteVazio onConfigure={() => onSelectTab('admin')} />
           )}
 
-          <div className="min-w-0 flex-1 pb-7">
-            <h1 className="font-display text-[30px] sm:text-[34px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight">
-              {saudacao()}, {firstName}
-            </h1>
-            <p className="t-body text-slate-600 dark:text-slate-400 mt-1">{frase}</p>
+          {/* Faixa da frase, sobre a imagem, como na referência */}
+          <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl bg-white/85 dark:bg-slate-950/80 backdrop-blur px-4 py-3">
+            <p className="t-body text-slate-800 dark:text-slate-200">{frase}</p>
           </div>
+        </section>
 
-          <div className="hidden sm:block pb-7 shrink-0">
+        {/* Carga por dia */}
+        <section className="lg:col-span-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 flex flex-col">
+          <div className="flex items-baseline justify-between gap-4 flex-wrap">
+            <div>
+              <h2 className="t-label text-slate-500">Carga da semana</h2>
+              <p className="t-meta text-slate-400 dark:text-slate-500 mt-1">
+                {format(semana.inicio, "d 'de' MMM", { locale: ptBR })} a{' '}
+                {format(semana.fim, "d 'de' MMM", { locale: ptBR })}
+              </p>
+            </div>
             <Button variant="primary" icon={Plus} onClick={onNewTask}>
               Nova tarefa
             </Button>
           </div>
-        </div>
-      </section>
 
-      <div className="sm:hidden">
-        <Button variant="primary" icon={Plus} onClick={onNewTask} className="w-full">
-          Nova tarefa
-        </Button>
+          <GraficoDaSemana dias={carga} />
+
+          <div className="flex items-center gap-4 flex-wrap mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
+            <Legenda cor="bg-emerald-500" texto="Concluídas" />
+            <Legenda cor="bg-sky-500" texto="Com o cliente" />
+            <Legenda cor="bg-slate-400 dark:bg-slate-500" texto="Em produção" />
+          </div>
+        </section>
       </div>
 
       {/* ---------------------------------------------------------------
@@ -128,13 +156,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
          --------------------------------------------------------------- */}
       <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 space-y-6">
         <div className="flex items-baseline justify-between gap-4 flex-wrap">
-          <div>
-            <h2 className="t-label text-slate-500">Esta semana</h2>
-            <p className="t-meta text-slate-400 dark:text-slate-500 mt-1">
-              {format(semana.inicio, "d 'de' MMM", { locale: ptBR })} a{' '}
-              {format(semana.fim, "d 'de' MMM", { locale: ptBR })}
-            </p>
-          </div>
+          <h2 className="t-label text-slate-500">Entregas da semana</h2>
           <button
             onClick={() => onSelectTab('tarefas')}
             className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
@@ -337,14 +359,89 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
 const MascoteVazio: React.FC<{ onConfigure: () => void }> = ({ onConfigure }) => (
   <button
     onClick={onConfigure}
-    title="Enviar imagens do mascote nas configurações"
-    className="hidden sm:grid h-[104px] w-[104px] -mb-7 shrink-0 place-items-center rounded-t-2xl border border-b-0 border-dashed border-slate-300 dark:border-slate-700 text-slate-400 hover:text-slate-600 hover:border-slate-400 dark:hover:text-slate-300 transition-colors cursor-pointer"
+    className="relative z-0 mt-auto mb-16 mx-6 grid place-items-center rounded-xl border border-dashed border-amber-300/80 dark:border-slate-700 py-8 text-amber-800/70 dark:text-slate-400 hover:border-amber-400 hover:text-amber-900 dark:hover:text-slate-200 transition-colors cursor-pointer"
   >
-    <span className="text-center px-2">
-      <Settings2 className="h-5 w-5 mx-auto mb-1" />
-      <span className="block t-meta leading-tight">Enviar mascote</span>
+    <span className="text-center px-4">
+      <Settings2 className="h-5 w-5 mx-auto mb-2" />
+      <span className="block t-ui font-medium">Enviar as poses do mascote</span>
+      <span className="block t-meta mt-0.5 opacity-80">
+        Configurações → Identidade do Sistema
+      </span>
     </span>
   </button>
+);
+
+/**
+ * Barras empilhadas por dia. A altura é relativa ao dia mais cheio da semana,
+ * não a um teto fixo — o que importa é comparar os dias entre si.
+ */
+const GraficoDaSemana: React.FC<{ dias: DiaDaSemana[] }> = ({ dias }) => {
+  const pico = Math.max(...dias.map((d) => d.total), 1);
+  const vazio = dias.every((d) => d.total === 0);
+
+  return (
+    <div className="flex-1 flex flex-col justify-end mt-6">
+      {vazio && (
+        <p className="t-body text-slate-400 dark:text-slate-500 mb-4">
+          Nenhuma publicação programada para esta semana.
+        </p>
+      )}
+
+      <div className="flex items-end gap-2 sm:gap-3 h-[140px]">
+        {dias.map((dia) => {
+          const faixas = [
+            { valor: dia.concluido, cor: 'bg-emerald-500' },
+            { valor: dia.comCliente, cor: 'bg-sky-500' },
+            { valor: dia.emProducao, cor: 'bg-slate-400 dark:bg-slate-500' },
+          ].filter((f) => f.valor > 0);
+
+          return (
+            <div key={dia.chave} className="flex-1 flex flex-col items-center gap-2 h-full">
+              <span className="t-meta text-slate-400 dark:text-slate-500 tabular-nums">
+                {dia.total > 0 ? dia.total : ''}
+              </span>
+
+              <div
+                className="w-full flex-1 flex flex-col justify-end"
+                title={`${dia.rotulo}: ${dia.total} ${dia.total === 1 ? 'publicação' : 'publicações'}`}
+              >
+                {dia.total === 0 ? (
+                  <span className="w-full h-1 rounded-full bg-slate-100 dark:bg-slate-800" />
+                ) : (
+                  <span className="w-full flex flex-col overflow-hidden rounded-md">
+                    {faixas.map((f, i) => (
+                      <span
+                        key={i}
+                        className={f.cor}
+                        style={{ height: `${(f.valor / pico) * 130}px` }}
+                      />
+                    ))}
+                  </span>
+                )}
+              </div>
+
+              <span
+                className={`t-meta ${
+                  dia.hoje
+                    ? 'font-semibold text-slate-950 dark:text-white'
+                    : 'text-slate-400 dark:text-slate-500'
+                }`}
+              >
+                {dia.rotulo}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const Legenda: React.FC<{ cor: string; texto: string }> = ({ cor, texto }) => (
+  <span className="inline-flex items-center gap-1.5 t-meta text-slate-500 dark:text-slate-400">
+    <span className={`h-2 w-2 rounded-sm ${cor}`} />
+    {texto}
+  </span>
 );
 
 /**

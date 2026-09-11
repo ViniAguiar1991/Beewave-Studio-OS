@@ -167,6 +167,47 @@ export const resumoDaSemana = (
   };
 };
 
+export interface DiaDaSemana {
+  /** 'seg', 'ter'… */
+  rotulo: string;
+  chave: string;
+  hoje: boolean;
+  emProducao: number;
+  comCliente: number;
+  concluido: number;
+  total: number;
+}
+
+const ROTULOS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
+
+/**
+ * Carga por dia da semana.
+ *
+ * Serve para enxergar desequilíbrio: segunda lotada e quinta vazia é problema de
+ * distribuição, não de volume — e isso não aparece num número só.
+ */
+export const cargaPorDia = (tasks: Task[], base = new Date()): DiaDaSemana[] => {
+  const { inicio } = semanaDe(base);
+  const hojeChave = chave(new Date());
+
+  return ROTULOS.map((rotulo, i) => {
+    const d = new Date(inicio);
+    d.setDate(inicio.getDate() + i);
+    const k = chave(d);
+
+    const doDia = tasks.filter((t) => diaDe(t) === k);
+    return {
+      rotulo,
+      chave: k,
+      hoje: k === hojeChave,
+      emProducao: doDia.filter((t) => EM_PRODUCAO.includes(t.status)).length,
+      comCliente: doDia.filter((t) => t.status === 'em_aprovacao' || t.status === 'alterar').length,
+      concluido: doDia.filter((t) => CONCLUIDAS.includes(t.status)).length,
+      total: doDia.length,
+    };
+  });
+};
+
 /* ---------------------------------------------------------------------------
  * Saudação
  * ------------------------------------------------------------------------- */

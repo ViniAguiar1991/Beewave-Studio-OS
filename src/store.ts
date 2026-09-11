@@ -1132,6 +1132,15 @@ interface BeeWaveState {
 
   // Timer Dock
   dockedTimerTaskId: string | null;
+  /**
+   * Cronômetro que o usuário fechou à mão nesta máquina.
+   *
+   * Fica só local, de propósito: quando a gravação na nuvem falha (cota
+   * esgotada, rede caindo), o listener devolve a tarefa com o cronômetro
+   * ainda rodando e o aviso voltava à tela por mais que se fechasse.
+   */
+  dismissedTimerTaskId: string | null;
+  dismissTimerWidget: (taskId: string) => void;
   setDockedTimerTaskId: (id: string | null) => void;
   resetTimer: (id: string) => void;
 
@@ -1730,6 +1739,17 @@ export const useAppStore = create<BeeWaveState>()(
 
       // Timer Dock
       dockedTimerTaskId: null,
+      dismissedTimerTaskId: null,
+
+      dismissTimerWidget: (taskId) =>
+        set((state) => ({
+          dismissedTimerTaskId: taskId,
+          dockedTimerTaskId: state.dockedTimerTaskId === taskId ? null : state.dockedTimerTaskId,
+          // Zera o cronômetro localmente mesmo que a nuvem não confirme.
+          tasks: state.tasks.map((t) =>
+            t.id === taskId ? { ...t, timerStartedAt: null } : t
+          ),
+        })),
       setDockedTimerTaskId: (id) => set({ dockedTimerTaskId: id }),
       resetTimer: (id) =>
         set((state) => ({
@@ -1971,6 +1991,8 @@ export const useAppStore = create<BeeWaveState>()(
         let updated: Task | undefined;
         set((state) => ({
           dockedTimerTaskId: id,
+          dismissedTimerTaskId:
+            state.dismissedTimerTaskId === id ? null : state.dismissedTimerTaskId,
           tasks: state.tasks.map((t) => {
             if (t.id === id) {
               updated = { ...t, timerStartedAt: Date.now() };
