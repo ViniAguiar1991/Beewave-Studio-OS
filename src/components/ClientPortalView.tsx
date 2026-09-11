@@ -111,7 +111,17 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const [suggestionOpen, setSuggestionOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const client = clients.find((c) => c.id === selectedClientId) || clients[0];
+  /**
+   * Quem entra como cliente vê o SEU portal ou nenhum.
+   *
+   * Antes havia `|| clients[0]` aqui também para o acesso travado, e um
+   * usuário-cliente apontando para um cliente que não existe mais caía no
+   * portal do primeiro da lista — via as pautas e a estratégia de outra marca.
+   * A reserva só vale para a agência, que escolhe o cliente no seletor.
+   */
+  const client = isClientLocked
+    ? clients.find((c) => c.id === selectedClientId)
+    : clients.find((c) => c.id === selectedClientId) || clients[0];
   const clientTasks = useMemo(
     () => tasks.filter((t) => t.clientId === client?.id),
     [tasks, client?.id]
