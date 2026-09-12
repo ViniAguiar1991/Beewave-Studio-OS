@@ -6,6 +6,7 @@ import { ClientPortalHeader, PortalTabKey } from './client-portal/ClientPortalHe
 import { ClientSummaryTab } from './client-portal/ClientSummaryTab';
 import { ClientApprovalTab } from './client-portal/ClientApprovalTab';
 import { ClientStrategyTab } from './client-portal/ClientStrategyTab';
+import { ClientCampaignsTab } from './client-portal/ClientCampaignsTab';
 import { ClientCalendarTab } from './client-portal/ClientCalendarTab';
 import { ClientFilesTab } from './client-portal/ClientFilesTab';
 import { ClientReportsTab } from './client-portal/ClientReportsTab';
@@ -26,6 +27,7 @@ const VALID_TABS: PortalTabKey[] = [
   'resumo',
   'aprovacoes',
   'estrategia',
+  'campanhas',
   'calendario',
   'arquivos',
   'resultados',
@@ -51,6 +53,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const currentUser = useCurrentUser();
   const clients = useAppStore((s) => s.clients);
   const tasks = useAppStore((s) => s.tasks);
+  const campaigns = useAppStore((s) => s.campaigns);
   const addTask = useAppStore((s) => s.addTask);
   const addClientFiles = useAppStore((s) => s.addClientFiles);
   const clientApprove = useAppStore((s) => s.clientApprove);
@@ -131,6 +134,10 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const pending = clientTasks.filter(needsClientDecision);
   const revising = clientTasks.filter(isBeingRevised);
   const reports = client?.monthlyReports || [];
+  const clientCampaigns = useMemo(
+    () => campaigns.filter((c) => c.clientId === client?.id),
+    [campaigns, client?.id]
+  );
 
   /**
    * A frase de situação do cabeçalho. Específica, com números reais, e
@@ -278,9 +285,11 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     );
   }
 
-  // A aba Resultados pode sumir quando o último relatório é removido.
-  const effectiveTab: PortalTabKey =
-    activeTab === 'resultados' && reports.length === 0 ? 'resumo' : activeTab;
+  // Resultados e Campanhas somem quando a última fonte delas é removida.
+  const abaSemConteudo =
+    (activeTab === 'resultados' && reports.length === 0) ||
+    (activeTab === 'campanhas' && clientCampaigns.length === 0);
+  const effectiveTab: PortalTabKey = abaSemConteudo ? 'resumo' : activeTab;
 
   return (
     <div data-surface="portal" className="min-h-screen pb-24">
@@ -298,6 +307,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
         onLogout={() => (onLogout ? onLogout() : logout())}
         pendingCount={pending.length}
         hasReports={reports.length > 0}
+        hasCampaigns={clientCampaigns.length > 0}
         statusLine={statusLine}
       />
 
@@ -331,6 +341,14 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
             onUpdateStrategy={(strat) => updateClientStrategy(client.id, strat)}
             isAgencyView={!isClientLocked}
             onRequestChange={handleStrategyChangeRequest}
+          />
+        )}
+
+        {effectiveTab === 'campanhas' && (
+          <ClientCampaignsTab
+            campaigns={clientCampaigns}
+            tasks={clientTasks}
+            onOpenTask={openTask}
           />
         )}
 

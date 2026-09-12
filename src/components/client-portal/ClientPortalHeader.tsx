@@ -6,6 +6,7 @@ export type PortalTabKey =
   | 'resumo'
   | 'aprovacoes'
   | 'estrategia'
+  | 'campanhas'
   | 'calendario'
   | 'arquivos'
   | 'resultados';
@@ -29,6 +30,8 @@ interface ClientPortalHeaderProps {
   pendingCount: number;
   /** A aba Resultados só existe quando há relatório para ler. */
   hasReports: boolean;
+  /** Idem Campanhas: sem campanha montada, a aba não aparece vazia. */
+  hasCampaigns: boolean;
   /** Frase única de situação, calculada pelo Resumo. */
   statusLine: string;
 }
@@ -55,6 +58,7 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
   onLogout,
   pendingCount,
   hasReports,
+  hasCampaigns,
   statusLine,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
@@ -63,6 +67,7 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
     { key: 'resumo', label: 'Resumo' },
     { key: 'aprovacoes', label: 'Aprovações', badge: pendingCount },
     { key: 'estrategia', label: 'Estratégia' },
+    ...(hasCampaigns ? [{ key: 'campanhas' as PortalTabKey, label: 'Campanhas' }] : []),
     { key: 'calendario', label: 'Calendário' },
     { key: 'arquivos', label: 'Arquivos' },
     ...(hasReports ? [{ key: 'resultados' as PortalTabKey, label: 'Resultados' }] : []),

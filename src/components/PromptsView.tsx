@@ -8,8 +8,9 @@ import { Button, EmptyState, Toast } from './ui';
  * Prompts — os comandos que a agência já validou.
  *
  * A tela existe para uma coisa: achar o prompt certo e levar para o
- * ChatGPT. Por isso copiar é a ação de cada linha e o texto aparece
- * inteiro, sem card intermediário pedindo um clique a mais.
+ * ChatGPT. A lista mostra só o título e a primeira linha, porque comando
+ * bom é longo e meia dúzia deles abertos vira parede de texto. O conteúdo
+ * inteiro abre no clique, com copiar à mão.
  *
  * As categorias são abas porque navegam. Criar categoria é raro e mora
  * atrás de um botão discreto, não competindo com "Novo prompt".
@@ -28,6 +29,7 @@ export const PromptsView: React.FC = () => {
   const [copiado, setCopiado] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
+  const [lendo, setLendo] = useState<PromptItem | null>(null);
   const [editando, setEditando] = useState<PromptItem | null>(null);
   const [criando, setCriando] = useState(false);
   const [novaPasta, setNovaPasta] = useState(false);
@@ -56,6 +58,12 @@ export const PromptsView: React.FC = () => {
     navigator.clipboard.writeText(item.body);
     setCopiado(item.id);
     setTimeout(() => setCopiado((c) => (c === item.id ? null : c)), 2500);
+  };
+
+  /** Primeira linha do comando, cortada: pista do que ele faz, não o texto. */
+  const resumo = (body: string) => {
+    const linha = body.trim().split('\n')[0];
+    return linha.length > 90 ? `${linha.slice(0, 90).trimEnd()}…` : linha;
   };
 
   const nomeDaPasta = (id: string) => promptFolders.find((f) => f.id === id)?.name || 'Geral';
@@ -167,58 +175,76 @@ export const PromptsView: React.FC = () => {
           />
         )
       ) : (
+        /* Só o título na lista. Prompt bom costuma ser longo, e meia dúzia
+           deles abertos ao mesmo tempo viram parede de texto — some a
+           capacidade de bater o olho e achar o que se procura. O conteúdo
+           abre no clique. */
         <ul className="divide-y divide-slate-200 dark:divide-slate-800 border-b border-slate-200 dark:border-slate-800">
           {visiveis.map((item) => (
-            <li key={item.id} className="py-5 group">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h2 className="t-lead font-semibold text-slate-950 dark:text-white">
-                    {item.title}
-                  </h2>
-                  {buscando && (
-                    <p className="t-meta text-slate-400 dark:text-slate-500 mt-0.5">
-                      {nomeDaPasta(item.folderId)}
-                    </p>
+            <li key={item.id} className="group flex items-center gap-3">
+              <button
+                onClick={() => setLendo(item)}
+                className="min-w-0 flex-1 py-3.5 text-left cursor-pointer"
+              >
+                <span className="block t-lead font-medium text-slate-950 dark:text-white truncate group-hover:underline underline-offset-4">
+                  {item.title}
+                </span>
+                <span className="block t-meta text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                  {buscando ? `${nomeDaPasta(item.folderId)} · ` : ''}
+                  {resumo(item.body)}
+                </span>
+              </button>
+
+              <div className="shrink-0 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <button
+                  onClick={() => copiar(item)}
+                  aria-label={`Copiar ${item.title}`}
+                  title="Copiar"
+                  className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                >
+                  {copiado === item.id ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
                   )}
-                </div>
-
-                <div className="shrink-0 flex items-center gap-1">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    icon={copiado === item.id ? Check : Copy}
-                    onClick={() => copiar(item)}
-                  >
-                    {copiado === item.id ? 'Copiado' : 'Copiar'}
-                  </Button>
-                  <button
-                    onClick={() => setEditando(item)}
-                    aria-label={`Editar ${item.title}`}
-                    title="Editar"
-                    className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all cursor-pointer"
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      deletePrompt(item.id);
-                      setAviso(`"${item.title}" excluído.`);
-                    }}
-                    aria-label={`Excluir ${item.title}`}
-                    title="Excluir"
-                    className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-all cursor-pointer"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
+                </button>
+                <button
+                  onClick={() => setEditando(item)}
+                  aria-label={`Editar ${item.title}`}
+                  title="Editar"
+                  className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={() => {
+                    deletePrompt(item.id);
+                    setAviso(`"${item.title}" excluído.`);
+                  }}
+                  aria-label={`Excluir ${item.title}`}
+                  title="Excluir"
+                  className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:text-rose-600 cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
               </div>
-
-              <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-[13.5px] leading-relaxed text-slate-600 dark:text-slate-400 max-h-52 overflow-y-auto">
-                {item.body}
-              </pre>
             </li>
           ))}
         </ul>
+      )}
+
+      {lendo && (
+        <LeitorPrompt
+          prompt={lendo}
+          categoria={nomeDaPasta(lendo.folderId)}
+          copiado={copiado === lendo.id}
+          onCopiar={() => copiar(lendo)}
+          onEditar={() => {
+            setEditando(lendo);
+            setLendo(null);
+          }}
+          onClose={() => setLendo(null)}
+        />
       )}
 
       {(criando || editando) && (
@@ -286,6 +312,67 @@ const useEscape = (onClose: () => void) => {
 
 const campo =
   'w-full h-10 px-3 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent t-ui text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors';
+
+/**
+ * Leitura do prompt.
+ *
+ * Abre com o texto inteiro rolável e a ação principal à mão: copiar. Quem
+ * chegou aqui quer levar o comando para o ChatGPT, não editar.
+ */
+const LeitorPrompt: React.FC<{
+  prompt: PromptItem;
+  categoria: string;
+  copiado: boolean;
+  onCopiar: () => void;
+  onEditar: () => void;
+  onClose: () => void;
+}> = ({ prompt, categoria, copiado, onCopiar, onEditar, onClose }) => {
+  useEscape(onClose);
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center p-0 sm:p-6">
+      <div className="absolute inset-0 bg-slate-950/55" onClick={onClose} aria-hidden="true" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={prompt.title}
+        className="relative w-full sm:max-w-2xl max-h-[88vh] flex flex-col bg-white dark:bg-[#0f1114] sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl"
+        style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4 shrink-0 border-b border-slate-200 dark:border-slate-800">
+          <div className="min-w-0">
+            <h2 className="font-display text-[18px] font-semibold tracking-tight text-slate-950 dark:text-white">
+              {prompt.title}
+            </h2>
+            <p className="t-meta text-slate-400 dark:text-slate-500 mt-0.5">{categoria}</p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Fechar"
+            className="shrink-0 grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="min-h-0 overflow-y-auto px-6 py-5">
+          <pre className="whitespace-pre-wrap break-words font-mono text-[13.5px] leading-relaxed text-slate-700 dark:text-slate-300">
+            {prompt.body}
+          </pre>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 px-6 py-4 shrink-0 border-t border-slate-200 dark:border-slate-800">
+          <Button variant="ghost" icon={Pencil} onClick={onEditar}>
+            Editar
+          </Button>
+          <Button variant="primary" icon={copiado ? Check : Copy} onClick={onCopiar}>
+            {copiado ? 'Copiado' : 'Copiar prompt'}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const FormularioPrompt: React.FC<{
   prompt: PromptItem | null;

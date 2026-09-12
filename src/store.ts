@@ -2925,7 +2925,9 @@ export const useAppStore = create<BeeWaveState>()(
             });
           }
 
-          if (!state.campaigns || state.campaigns.length === 0) {
+          // Mesma regra dos clientes e das pautas: conteúdo de demonstração
+          // só numa base vazia.
+          if (primeiraCarga && (!state.campaigns || state.campaigns.length === 0)) {
             state.campaigns = DEFAULT_CAMPAIGNS;
           }
 

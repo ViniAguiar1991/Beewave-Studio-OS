@@ -118,21 +118,28 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
         {/* O degradê é do container, não da imagem: o PNG entra recortado
             e a base some no cinza em vez de terminar numa borda dura. */}
-        <section className="lg:col-span-4 relative rounded-2xl overflow-hidden bg-gradient-to-t from-slate-200/90 via-slate-100/60 to-transparent dark:from-slate-800/70 dark:via-slate-800/25 dark:to-transparent min-h-[320px] flex items-stretch">
+        <section className="lg:col-span-3 relative rounded-2xl overflow-hidden bg-gradient-to-t from-slate-200/90 via-slate-100/60 to-transparent dark:from-slate-800/70 dark:via-slate-800/25 dark:to-transparent min-h-[240px]">
           {mascote ? (
+            /* Posição absoluta de propósito: assim a imagem não entra na
+               conta da altura da linha. Com w-full no fluxo normal, numa
+               tela larga a proporção do PNG puxava a altura para cima e
+               esticava o gráfico junto. Quem manda na altura é a carga da
+               semana; o mascote só preenche o que sobrar. */
             <img
               src={mascote}
               alt=""
-              className="w-full h-full object-contain object-bottom select-none"
+              className="absolute inset-x-0 bottom-0 mx-auto h-[86%] w-auto max-w-[88%] object-contain object-bottom select-none"
               draggable={false}
             />
           ) : (
-            <MascoteVazio onConfigure={() => onSelectTab('admin')} />
+            <div className="absolute inset-0 flex items-center">
+              <MascoteVazio onConfigure={() => onSelectTab('admin')} />
+            </div>
           )}
         </section>
 
         {/* Carga por dia */}
-        <section className="lg:col-span-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 flex flex-col">
+        <section className="lg:col-span-9 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 flex flex-col">
           <div>
             <h2 className="t-label text-slate-500">Carga da semana</h2>
             <p className="t-meta text-slate-400 dark:text-slate-500 mt-1">

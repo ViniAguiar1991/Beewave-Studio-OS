@@ -351,7 +351,13 @@ const FormularioCampanha: React.FC<{
   const clients = useAppStore((s) => s.clients);
 
   const [title, setTitle] = useState(campanha?.title || '');
-  const [clientId, setClientId] = useState(campanha?.clientId || clients[0]?.id || '');
+  // Se o cliente gravado não existe mais, o <select> mostraria a primeira
+  // opção enquanto o estado seguraria o id morto — salvar sem mexer no campo
+  // manteria a campanha órfã. Aqui o estado começa alinhado com o que aparece.
+  const [clientId, setClientId] = useState(() => {
+    const gravado = campanha?.clientId;
+    return gravado && clients.some((c) => c.id === gravado) ? gravado : clients[0]?.id || '';
+  });
   const [description, setDescription] = useState(campanha?.description || '');
   const [startDate, setStartDate] = useState(campanha?.startDate || '');
   const [endDate, setEndDate] = useState(campanha?.endDate || '');
