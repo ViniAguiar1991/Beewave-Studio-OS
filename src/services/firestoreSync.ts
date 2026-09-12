@@ -9,7 +9,7 @@ import {
   onSnapshot,
 } from '../firebase';
 import { useAppStore } from '../store';
-import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty } from '../types';
+import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty, Campaign } from '../types';
 import { uploadTaskFileToCloud, deleteTaskFileFromCloud } from './taskFileCloudSync';
 
 let isListening = false;
@@ -102,6 +102,31 @@ export function initFirestoreSync() {
       }
     }, (error) => {
       console.warn('Firestore clients listener note:', error.message);
+    });
+
+    // 2b. Campanhas
+    //
+    // Faltava: campanha criada num computador não aparecia em outro nem para
+    // o colega, e sumia se o navegador fosse limpo. Como ela também alimenta
+    // a aba Campanhas do portal, o cliente via uma lista que dependia de qual
+    // máquina a agência tinha usado.
+    const campaignsCol = collection(db, COLLECTIONS.CAMPAIGNS);
+    onSnapshot(campaignsCol, (snapshot) => {
+      if (snapshot.empty) {
+        // Primeira vez com a coleção criada: as campanhas que já existiam
+        // neste navegador sobem, senão ficariam presas aqui para sempre —
+        // o listener só sabe puxar.
+        seedInitialCampaignsToCloud();
+        return;
+      }
+      const campaigns: Campaign[] = [];
+      snapshot.forEach((docSnap) => {
+        const raw = docSnap.data() as any;
+        if (raw) campaigns.push({ id: docSnap.id, ...raw } as Campaign);
+      });
+      if (campaigns.length > 0) useAppStore.setState({ campaigns });
+    }, (error) => {
+      console.warn('Listener de campanhas:', error.message);
     });
 
     // 3. Listen to Tasks collection (Real-time updates between all users)
@@ -505,6 +530,29 @@ export async function deleteUserFromCloud(userId: string) {
 /**
  * Saves or updates a single task directly in Firestore
  */
+export async function syncCampaignToCloud(campaign: Campaign) {
+  if (isCloudSyncDisabled()) return;
+  if (!campaign.id) return;
+  try {
+    const ref = doc(db, COLLECTIONS.CAMPAIGNS, campaign.id);
+    await setDoc(ref, sanitizeForFirestore({ ...campaign, updatedAt: new Date().toISOString() }), {
+      merge: true,
+    });
+  } catch (err) {
+    console.error(`Erro ao salvar a campanha ${campaign.id}:`, err);
+  }
+}
+
+export async function deleteCampaignFromCloud(campaignId: string) {
+  if (isCloudSyncDisabled()) return;
+  if (!campaignId) return;
+  try {
+    await deleteDoc(doc(db, COLLECTIONS.CAMPAIGNS, campaignId));
+  } catch (err) {
+    console.error(`Erro ao excluir a campanha ${campaignId}:`, err);
+  }
+}
+
 export async function syncTaskToCloud(task: Task) {
   if (isCloudSyncDisabled()) return;
   if (!task.id) return;
@@ -733,6 +781,23 @@ async function seedInitialClientsToCloud() {
     }
   } catch (err) {
     console.error('Error seeding clients:', err);
+  } finally {
+    isSyncingToCloud = false;
+  }
+}
+
+async function seedInitialCampaignsToCloud() {
+  if (isCloudSyncDisabled()) return;
+  const state = useAppStore.getState();
+  if (!state.campaigns || state.campaigns.length === 0) return;
+  isSyncingToCloud = true;
+  try {
+    for (const campaign of state.campaigns) {
+      const ref = doc(db, COLLECTIONS.CAMPAIGNS, campaign.id);
+      await setDoc(ref, sanitizeForFirestore(campaign), { merge: true });
+    }
+  } catch (err) {
+    console.error('Erro ao semear campanhas:', err);
   } finally {
     isSyncingToCloud = false;
   }

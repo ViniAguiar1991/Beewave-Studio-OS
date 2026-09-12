@@ -35,6 +35,7 @@ export const auth = getAuth(app);
 export const COLLECTIONS = {
   CLIENTS: 'clients',
   TASKS: 'tasks',
+  CAMPAIGNS: 'campaigns',
   USERS: 'users',
   PLANS: 'plans',
   CATEGORIES: 'categories',

@@ -12,6 +12,8 @@ import {
   publishTaskViewsToCloud,
   syncMascotToCloud,
   syncDashboardPhrasesToCloud,
+  syncCampaignToCloud,
+  deleteCampaignFromCloud,
   syncPromptsConfigToCloud,
 } from './services/firestoreSync';
 import {
@@ -1265,6 +1267,7 @@ interface BeeWaveState {
 
   // Central de Tarefas configurável: visões e colunas criadas pelo usuário
   taskViews: TaskView[];
+  resetTaskViews: () => void;
   activeViewId: string;
   customProperties: CustomProperty[];
   /** Há mudanças de visão ainda não publicadas para a equipe. */
@@ -1336,6 +1339,11 @@ export const useAppStore = create<BeeWaveState>()(
 
       addTaskView: (view) =>
         set((state) => ({ taskViews: [...state.taskViews, view], activeViewId: view.id, viewsDirty: true })),
+
+      resetTaskViews: () => {
+        const padrao = buildDefaultViews();
+        set({ taskViews: padrao, activeViewId: padrao[0].id, viewsDirty: true });
+      },
 
       updateTaskView: (viewId, data) =>
         set((state) => ({
@@ -2453,19 +2461,35 @@ export const useAppStore = create<BeeWaveState>()(
           ...data,
         };
         set((state) => ({ campaigns: [newCamp, ...state.campaigns] }));
+        syncCampaignToCloud(newCamp);
         return newCamp;
       },
       updateCampaign: (id, data) => {
+        let atualizada: Campaign | undefined;
         set((state) => ({
-          campaigns: state.campaigns.map((c) => (c.id === id ? { ...c, ...data } : c)),
+          campaigns: state.campaigns.map((c) => {
+            if (c.id !== id) return c;
+            atualizada = { ...c, ...data };
+            return atualizada;
+          }),
         }));
+        if (atualizada) syncCampaignToCloud(atualizada);
       },
       deleteCampaign: (id) => {
+        // As pautas que ficam sem campanha também precisam subir: sem isso a
+        // nuvem continuaria apontando para uma campanha que não existe mais.
+        const desvinculadas: Task[] = [];
         set((state) => ({
           campaigns: state.campaigns.filter((c) => c.id !== id),
-          // Unlink tasks that belonged to this campaign
-          tasks: state.tasks.map((t) => (t.campaignId === id ? { ...t, campaignId: undefined } : t)),
+          tasks: state.tasks.map((t) => {
+            if (t.campaignId !== id) return t;
+            const solta = { ...t, campaignId: undefined, updatedAt: new Date().toISOString() };
+            desvinculadas.push(solta);
+            return solta;
+          }),
         }));
+        deleteCampaignFromCloud(id);
+        desvinculadas.forEach((t) => syncTaskToCloud(t));
       },
 
       // Contract Services & Recurring Flow

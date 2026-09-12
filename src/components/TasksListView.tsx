@@ -66,6 +66,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
 
   const setActiveView = useAppStore((s) => s.setActiveView);
   const addTaskView = useAppStore((s) => s.addTaskView);
+  const resetTaskViews = useAppStore((s) => s.resetTaskViews);
   const updateTaskView = useAppStore((s) => s.updateTaskView);
   const deleteTaskView = useAppStore((s) => s.deleteTaskView);
   const duplicateTaskView = useAppStore((s) => s.duplicateTaskView);
@@ -234,6 +235,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         onDeleteView={() => {
           if (window.confirm(`Excluir a visão "${view.name}"?`)) deleteTaskView(view.id);
         }}
+        onResetViews={resetTaskViews}
         onAddProperty={addCustomProperty}
         onDeleteProperty={deleteCustomProperty}
       />

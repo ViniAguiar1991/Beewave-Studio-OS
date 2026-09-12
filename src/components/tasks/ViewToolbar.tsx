@@ -55,6 +55,8 @@ interface ViewToolbarProps {
   dirty: boolean;
   onPublish: () => void;
   publishing: boolean;
+  /** Recria o trio de fábrica: Todas, Minhas tarefas e Pedidos do cliente. */
+  onResetViews: () => void;
 }
 
 type PanelKey = 'filtro' | 'cores' | 'colunas' | 'ordem' | null;
@@ -83,6 +85,7 @@ export const ViewToolbar: React.FC<ViewToolbarProps> = ({
   dirty,
   onPublish,
   publishing,
+  onResetViews,
 }) => {
   const [panel, setPanel] = useState<PanelKey>(null);
   const [renaming, setRenaming] = useState(false);
@@ -221,6 +224,25 @@ export const ViewToolbar: React.FC<ViewToolbarProps> = ({
           )}
         </div>
       </div>
+      )}
+
+      {/* Volta ao trio de fábrica. Existe porque abas antigas publicadas para
+          a equipe chegam em todo navegador, e desfazer uma a uma é tedioso. */}
+      {open && (
+        <button
+          onClick={() => {
+            if (
+              window.confirm(
+                'Isto apaga as visões atuais e recria as três de fábrica: Todas as tarefas, Minhas tarefas e Pedidos do cliente. As suas continuam valendo para a equipe até você publicar de novo. Seguir?'
+              )
+            ) {
+              onResetViews();
+            }
+          }}
+          className="t-meta text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
+        >
+          Voltar às visões de fábrica
+        </button>
       )}
 
       {panel === 'filtro' && (

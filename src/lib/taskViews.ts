@@ -686,5 +686,20 @@ export const buildDefaultViews = (): TaskView[] => {
   };
   minhas.colorRules = JSON.parse(JSON.stringify(regras));
 
-  return [todas, minhas];
+  // "Pedidos do cliente" junta as duas formas de o cliente pedir algo: a
+  // sugestão de pauta que ele mandou pelo portal e o ajuste que ele pediu
+  // numa peça já enviada. São origens diferentes no dado, mesma fila para
+  // quem atende.
+  const doCliente = newView('Pedidos do cliente');
+  doCliente.isSystem = true;
+  doCliente.filter = {
+    match: 'any',
+    conditions: [
+      { id: rid('cond'), field: 'clientRequest', operator: 'isTrue' },
+      { id: rid('cond'), field: 'status', operator: 'is', value: 'alterar' },
+    ],
+  };
+  doCliente.colorRules = JSON.parse(JSON.stringify(regras));
+
+  return [todas, minhas, doCliente];
 };

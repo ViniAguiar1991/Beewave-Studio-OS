@@ -11,6 +11,7 @@ import {
   isCustomField,
   isUnaryOperator,
   operatorsFor,
+  ME,
 } from '../../lib/taskViews';
 
 interface ConditionRowProps {
@@ -125,9 +126,16 @@ const ValueInput: React.FC<{
       case 'client':
         return ctx.clients.map((c) => ({ value: c.id, label: c.company }));
       case 'assignee':
-        return ctx.users
-          .filter((u) => u.role !== 'cliente')
-          .map((u) => ({ value: u.id, label: u.name }));
+        return [
+          // O motor já entendia este valor, mas ele nunca aparecia na lista:
+          // dava para filtrar "tarefas do João", não "as minhas". Resolvido
+          // na hora da avaliação, então a mesma visão mostra para cada
+          // pessoa as pautas dela.
+          { value: ME, label: 'Quem estiver logado' },
+          ...ctx.users
+            .filter((u) => u.role !== 'cliente')
+            .map((u) => ({ value: u.id, label: u.name })),
+        ];
       case 'category':
         return ctx.categories.map((c) => ({ value: c.id, label: c.name }));
       case 'campaign':
