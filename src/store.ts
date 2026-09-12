@@ -1105,6 +1105,10 @@ interface BeeWaveState {
   /** Poses do mascote usadas na saudação do Início. Uma por dia. */
   mascotImages: string[];
   addMascotImages: (dataUrls: string[]) => Promise<void>;
+  /** Menu lateral recolhido em só ícones. Preferência de quem usa, por
+   *  navegador — não faz sentido impor a escolha de um ao resto da equipe. */
+  sidebarCollapsed: boolean;
+  toggleSidebar: () => void;
   /** Frases da saudação do Início. Uma por dia, igual para a equipe toda. */
   dashboardPhrases: string[];
   setDashboardPhrases: (frases: string[]) => Promise<void>;
@@ -1418,6 +1422,7 @@ export const useAppStore = create<BeeWaveState>()(
       logoDataUrl: null,
       iconDataUrl: null,
       mascotImages: [],
+      sidebarCollapsed: false,
       dashboardPhrases: FRASES_PADRAO,
 
       addMascotImages: async (dataUrls) => {
@@ -1432,6 +1437,8 @@ export const useAppStore = create<BeeWaveState>()(
         set({ mascotImages: proximas });
         return syncMascotToCloud(proximas);
       },
+
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
 
       setDashboardPhrases: (frases) => {
         // Sem frase cadastrada, o Início ficaria com uma linha vazia sob a

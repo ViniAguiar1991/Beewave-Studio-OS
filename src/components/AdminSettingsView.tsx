@@ -1,29 +1,26 @@
-import React, { useEffect, useId, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Activity,
   ChevronDown,
   ChevronUp,
   Download,
   ImagePlus,
   Plus,
-  RotateCcw,
   Trash2,
   Upload,
   X,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { compressImage } from '../utils/imageCompressor';
-import { AdminSystemPrompts, TaskStatus } from '../types';
+import { TaskStatus } from '../types';
 import { FRASES_PADRAO, fraseDoDia } from '../lib/weekPlan';
 import { Button, BlockHeader, EmptyState, Toast } from './ui';
 
-type Secao = 'marca' | 'inicio' | 'tarefas' | 'ia' | 'dados';
+type Secao = 'marca' | 'inicio' | 'tarefas' | 'dados';
 
 const SECOES: { key: Secao; label: string }[] = [
   { key: 'marca', label: 'Marca' },
   { key: 'inicio', label: 'Início' },
   { key: 'tarefas', label: 'Tarefas' },
-  { key: 'ia', label: 'Inteligência artificial' },
   { key: 'dados', label: 'Dados' },
 ];
 
@@ -42,14 +39,16 @@ const campoBase =
 /**
  * Configurações da agência.
  *
- * Cinco seções, cada uma respondendo a uma pergunta inteira: como a agência
- * se chama, o que o Início mostra, como as pautas são classificadas, como a
- * IA escreve e o que fazer com os dados.
+ * Quatro seções, cada uma respondendo a uma pergunta inteira: como a agência
+ * se chama, o que o Início mostra, como as pautas são classificadas e o que
+ * fazer com os dados.
  *
- * Saíram três abas: Planos e Mensalidades (mensalidade não é assunto desta
- * ferramenta), Equipe e Permissões (mora na própria tela de Equipe, junto de
- * quem elas afetam) e Lixeira, que estava aqui dentro e também no menu
- * lateral — duas portas para a mesma sala.
+ * Saíram quatro abas. Planos e Mensalidades, porque mensalidade não é assunto
+ * desta ferramenta. Equipe e Permissões, que mora na própria tela de Equipe,
+ * junto de quem elas afetam. Lixeira, que estava aqui dentro e também no menu
+ * lateral — duas portas para a mesma sala. E Inteligência Artificial, que era
+ * herança de outro sistema: os prompts do Gemini não são usados, e as rotas
+ * que eles alimentavam nem existem na versão publicada.
  */
 export const AdminSettingsView: React.FC = () => {
   const [secao, setSecao] = useState<Secao>('marca');
@@ -97,7 +96,6 @@ export const AdminSettingsView: React.FC = () => {
         {secao === 'marca' && <SecaoMarca onAviso={setAviso} />}
         {secao === 'inicio' && <SecaoInicio onAviso={setAviso} />}
         {secao === 'tarefas' && <SecaoTarefas onAviso={setAviso} />}
-        {secao === 'ia' && <SecaoIA onAviso={setAviso} />}
         {secao === 'dados' && <SecaoDados onAviso={setAviso} />}
       </div>
 
@@ -658,187 +656,6 @@ const SecaoTarefas: React.FC<{ onAviso: (m: string) => void }> = ({ onAviso }) =
 };
 
 /* ==========================================================================
- * Inteligência artificial
- * ========================================================================== */
-const SecaoIA: React.FC<{ onAviso: (m: string) => void }> = ({ onAviso }) => {
-  const adminPrompts = useAppStore((s) => s.adminPrompts);
-  const updateAdminPrompts = useAppStore((s) => s.updateAdminPrompts);
-  const resetAdminPrompts = useAppStore((s) => s.resetAdminPrompts);
-
-  const [teste, setTeste] = useState<{
-    estado: 'parado' | 'testando' | 'ok' | 'erro';
-    latencia?: number;
-    modelo?: string;
-    mensagem?: string;
-    detalhe?: string;
-  }>({ estado: 'parado' });
-
-  const [form, setForm] = useState<AdminSystemPrompts>({
-    headlinePrompt: adminPrompts?.headlinePrompt || '',
-    copyCaptionPrompt: adminPrompts?.copyCaptionPrompt || '',
-    copyCarouselPrompt: adminPrompts?.copyCarouselPrompt || '',
-    copyScriptPrompt: adminPrompts?.copyScriptPrompt || '',
-    chatRefinePrompt: adminPrompts?.chatRefinePrompt || '',
-    newsTrendsPrompt: adminPrompts?.newsTrendsPrompt || '',
-  });
-
-  useEffect(() => {
-    if (adminPrompts) setForm({ ...adminPrompts });
-  }, [adminPrompts]);
-
-  const testar = async () => {
-    setTeste({ estado: 'testando' });
-    const inicio = Date.now();
-    try {
-      const res = await fetch('/api/gemini/test', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: 'Teste de conexão Beewave Studio' }),
-      });
-      const latencia = Date.now() - inicio;
-
-      // 404 aqui não é "chave errada": é o servidor de IA não existir neste
-      // endereço. Dizer "erro na API" mandaria o usuário caçar a chave à toa.
-      if (res.status === 404) {
-        setTeste({
-          estado: 'erro',
-          latencia,
-          mensagem: 'O servidor de IA não está publicado neste endereço.',
-          detalhe:
-            'As rotas /api/* rodam no servidor Express, que existe no desenvolvimento local mas não na versão publicada. Enquanto isso, gerar textos com IA só funciona rodando o projeto na sua máquina.',
-        });
-        return;
-      }
-
-      const dados = await res.json().catch(() => null);
-      if (res.ok && dados?.success) {
-        setTeste({
-          estado: 'ok',
-          latencia,
-          modelo: dados.model,
-          mensagem: 'Conectado e respondendo.',
-        });
-      } else {
-        setTeste({
-          estado: 'erro',
-          latencia,
-          modelo: dados?.model,
-          mensagem: dados?.message || 'O serviço respondeu, mas recusou o pedido.',
-          detalhe: dados?.error || dados?.details || 'Confira a variável GEMINI_API_KEY.',
-        });
-      }
-    } catch (err: any) {
-      setTeste({
-        estado: 'erro',
-        latencia: Date.now() - inicio,
-        mensagem: 'Não foi possível falar com o servidor.',
-        detalhe: err?.message,
-      });
-    }
-  };
-
-  const campos: { key: keyof AdminSystemPrompts; label: string; ajuda: string }[] = [
-    { key: 'headlinePrompt', label: 'Sugerir headlines', ajuda: 'Usado no botão de gerar títulos da pauta.' },
-    { key: 'copyCaptionPrompt', label: 'Escrever legenda', ajuda: 'Legenda de post único e reels.' },
-    { key: 'copyCarouselPrompt', label: 'Escrever carrossel', ajuda: 'Roteiro slide a slide.' },
-    { key: 'copyScriptPrompt', label: 'Escrever roteiro', ajuda: 'Roteiro de vídeo e reels.' },
-    { key: 'chatRefinePrompt', label: 'Refinar no chat', ajuda: 'Quando você pede ajuste na conversa.' },
-    { key: 'newsTrendsPrompt', label: 'Tendências', ajuda: 'Busca de pautas quentes.' },
-  ];
-
-  return (
-    <div className="space-y-10">
-      <section className="space-y-4">
-        <BlockHeader
-          title="Conexão"
-          action={
-            <Button
-              variant="secondary"
-              size="sm"
-              icon={Activity}
-              onClick={testar}
-              pending={teste.estado === 'testando'}
-              pendingLabel="Testando…"
-            >
-              Testar conexão
-            </Button>
-          }
-        />
-
-        {teste.estado === 'parado' ? (
-          <p className="t-body text-slate-600 dark:text-slate-400 max-w-xl">
-            O teste manda uma frase curta para o modelo e mostra se ele respondeu. Use quando
-            gerar texto parar de funcionar.
-          </p>
-        ) : teste.estado === 'testando' ? (
-          <p className="t-body text-slate-500 dark:text-slate-400">Consultando…</p>
-        ) : (
-          <div className="space-y-2 max-w-xl">
-            <p
-              className={`t-lead font-medium ${
-                teste.estado === 'ok'
-                  ? 'text-emerald-700 dark:text-emerald-400'
-                  : 'text-rose-700 dark:text-rose-400'
-              }`}
-            >
-              {teste.mensagem}
-            </p>
-            {teste.detalhe && (
-              <p className="t-body text-slate-600 dark:text-slate-400">{teste.detalhe}</p>
-            )}
-            <p className="t-meta text-slate-400 dark:text-slate-500">
-              {teste.modelo ? `${teste.modelo} · ` : ''}
-              {teste.latencia}ms
-            </p>
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-4">
-        <BlockHeader
-          title="Instruções do sistema"
-          action={
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={RotateCcw}
-              onClick={() => {
-                resetAdminPrompts();
-                onAviso('Instruções voltaram ao padrão.');
-              }}
-            >
-              Voltar ao padrão
-            </Button>
-          }
-        />
-        <p className="t-body text-slate-600 dark:text-slate-400 max-w-xl">
-          O que a IA lê antes de cada pedido. Mexa aqui para mudar o tom de tudo que ela escreve,
-          em vez de corrigir texto por texto.
-        </p>
-
-        <div className="space-y-6">
-          {campos.map((c) => (
-            <CampoPrompt
-              key={c.key}
-              label={c.label}
-              ajuda={c.ajuda}
-              valor={form[c.key]}
-              onCommit={(v) => {
-                if (v !== adminPrompts?.[c.key]) {
-                  updateAdminPrompts({ ...form, [c.key]: v });
-                  onAviso(`"${c.label}" salvo.`);
-                }
-              }}
-              onChange={(v) => setForm((f) => ({ ...f, [c.key]: v }))}
-            />
-          ))}
-        </div>
-      </section>
-    </div>
-  );
-};
-
-/* ==========================================================================
  * Dados
  * ========================================================================== */
 const SecaoDados: React.FC<{ onAviso: (m: string) => void }> = ({ onAviso }) => {
@@ -1019,32 +836,5 @@ const SeletorDeCor: React.FC<{
         </>
       )}
     </span>
-  );
-};
-
-/** Instrução de sistema: grava ao sair do campo. */
-const CampoPrompt: React.FC<{
-  label: string;
-  ajuda: string;
-  valor: string;
-  onChange: (v: string) => void;
-  onCommit: (v: string) => void;
-}> = ({ label, ajuda, valor, onChange, onCommit }) => {
-  const id = useId();
-  return (
-    <div>
-      <label htmlFor={id} className="block t-label text-slate-500">
-        {label}
-      </label>
-      <p className="t-meta text-slate-400 dark:text-slate-500 mb-1.5">{ajuda}</p>
-      <textarea
-        id={id}
-        rows={3}
-        value={valor}
-        onChange={(e) => onChange(e.target.value)}
-        onBlur={(e) => onCommit(e.target.value)}
-        className="w-full px-3 py-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent font-mono text-[13px] leading-relaxed text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors resize-y"
-      />
-    </div>
   );
 };

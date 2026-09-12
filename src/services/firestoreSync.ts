@@ -238,10 +238,21 @@ export function initFirestoreSync() {
 
       useAppStore.setState((state) => {
         const publicadas = dados.taskViews || [];
+
         // Visões que a pessoa criou e ainda não publicou continuam na máquina
         // dela: receber a configuração da equipe não pode apagar rascunho.
+        //
+        // As visões de sistema são a exceção. "Todas as tarefas" e "Minhas
+        // tarefas" nascem de buildDefaultViews com id sorteado, diferente em
+        // cada navegador — então nunca batiam com as publicadas e sobravam
+        // como cópia. Quem abria o app via duas "Todas as tarefas" lado a
+        // lado. Quando a equipe publica as dela, as locais saem de cena.
+        const publicadasTemSistema = publicadas.some((p) => p.isSystem);
         const locaisNaoPublicadas = state.taskViews.filter(
-          (v) => !v.isShared && !publicadas.some((p) => p.id === v.id)
+          (v) =>
+            !v.isShared &&
+            !(v.isSystem && publicadasTemSistema) &&
+            !publicadas.some((p) => p.id === v.id)
         );
         const todas = [...publicadas, ...locaisNaoPublicadas];
         return {

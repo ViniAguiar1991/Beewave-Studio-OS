@@ -25,6 +25,7 @@ export function App() {
   const users = useAppStore((s) => s.users);
   const addTask = useAppStore((s) => s.addTask);
   const allTasks = useAppStore((s) => s.tasks);
+  const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
 
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
@@ -188,22 +189,6 @@ export function App() {
     }
   };
 
-  /**
-   * Quantas pautas dependem da equipe agora: ajuste pedido pelo cliente,
-   * sugestão de pauta ainda não avaliada, ou data de publicação já vencida.
-   * O mesmo número que a Home destaca em "Precisa de você".
-   */
-  const teamQueueCount = React.useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return allTasks.filter((t) => {
-      if (t.status === 'alterar') return true;
-      if (t.clientRequest && t.status === 'nao_iniciado') return true;
-      const day = (t.postDate || t.date || '').split('T')[0];
-      const concluida = t.status === 'aprovado' || t.status === 'postado';
-      return !!day && day < today && !concluida;
-    }).length;
-  }, [allTasks]);
-
   // If user is not logged in, render minimal clean login
   if (!currentUser) {
     return (
@@ -334,10 +319,13 @@ export function App() {
           setCurrentTab(tab);
         }}
         onOpenCloudModal={() => setIsCloudModalOpen(true)}
-        actionCount={teamQueueCount}
       />
 
-      <div className="md:pl-[232px] flex flex-col min-w-0">
+      <div
+        className={`flex flex-col min-w-0 transition-[padding] duration-200 ${
+          sidebarCollapsed ? 'md:pl-[60px]' : 'md:pl-[232px]'
+        }`}
+      >
         <main className="flex-1 px-5 sm:px-8 lg:px-12 py-8 lg:py-12 min-w-0">
           {/* Conteúdo da rota ativa */}
           {currentTab === 'inicio' && (
