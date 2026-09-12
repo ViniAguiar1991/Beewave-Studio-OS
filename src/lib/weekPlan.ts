@@ -218,7 +218,8 @@ export const saudacao = (hora = new Date().getHours()): string => {
   return 'Boa noite';
 };
 
-const FRASES = [
+/** Ponto de partida. A agência troca em Configurações › Início. */
+export const FRASES_PADRAO = [
   'Vamos fazer boas ideias acontecerem.',
   'Um post bem feito vale por dez apressados.',
   'Hoje é dia de deixar cliente orgulhoso.',
@@ -233,11 +234,12 @@ const FRASES = [
  * Frase do dia. Muda a cada dia e é a mesma para todo mundo da equipe —
  * sorteio a cada renderização deixaria o texto piscando na tela.
  */
-export const fraseDoDia = (data = new Date()): string => {
+export const fraseDoDia = (frases: string[] = FRASES_PADRAO, data = new Date()): string => {
+  const lista = frases.length > 0 ? frases : FRASES_PADRAO;
   const diaDoAno = Math.floor(
     (data.getTime() - new Date(data.getFullYear(), 0, 0).getTime()) / 86400000
   );
-  return FRASES[diaDoAno % FRASES.length];
+  return lista[diaDoAno % lista.length];
 };
 
 /** Mesma lógica para a pose do mascote: uma por dia, estável. */

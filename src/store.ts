@@ -11,6 +11,7 @@ import {
   syncAdminPromptsToCloud,
   publishTaskViewsToCloud,
   syncMascotToCloud,
+  syncDashboardPhrasesToCloud,
   syncPromptsConfigToCloud,
 } from './services/firestoreSync';
 import {
@@ -40,6 +41,7 @@ import {
   TaskView,
   CustomProperty,
 } from './types';
+import { FRASES_PADRAO } from './lib/weekPlan';
 import { buildDefaultViews } from './lib/taskViews';
 import { EMELY_STRATEGY_DOCUMENT } from './data/emelyStrategy';
 
@@ -1102,6 +1104,9 @@ interface BeeWaveState {
   /** Poses do mascote usadas na saudação do Início. Uma por dia. */
   mascotImages: string[];
   addMascotImages: (dataUrls: string[]) => Promise<void>;
+  /** Frases da saudação do Início. Uma por dia, igual para a equipe toda. */
+  dashboardPhrases: string[];
+  setDashboardPhrases: (frases: string[]) => Promise<void>;
   removeMascotImage: (index: number) => Promise<void>;
   toggleDarkMode: () => void;
   setDarkMode: (enabled: boolean) => void;
@@ -1412,6 +1417,7 @@ export const useAppStore = create<BeeWaveState>()(
       logoDataUrl: null,
       iconDataUrl: null,
       mascotImages: [],
+      dashboardPhrases: FRASES_PADRAO,
 
       addMascotImages: (dataUrls) => {
         // Teto de 12: são imagens em base64 e há limite tanto no navegador
@@ -1419,6 +1425,15 @@ export const useAppStore = create<BeeWaveState>()(
         const proximas = [...get().mascotImages, ...dataUrls].slice(0, 12);
         set({ mascotImages: proximas });
         return syncMascotToCloud(proximas);
+      },
+
+      setDashboardPhrases: (frases) => {
+        // Sem frase cadastrada, o Início ficaria com uma linha vazia sob a
+        // saudação. Lista vazia volta ao padrão em vez de virar buraco.
+        const limpas = frases.map((f) => f.trim()).filter(Boolean);
+        const proximas = limpas.length > 0 ? limpas : FRASES_PADRAO;
+        set({ dashboardPhrases: proximas });
+        return syncDashboardPhrasesToCloud(proximas);
       },
 
       removeMascotImage: (index) => {

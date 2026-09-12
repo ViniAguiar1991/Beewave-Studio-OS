@@ -56,6 +56,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   const tasks = useAppStore((s) => s.tasks);
   const statuses = useAppStore((s) => s.statuses);
   const notes = useAppStore((s) => s.notes);
+  const dashboardPhrases = useAppStore((s) => s.dashboardPhrases);
   const mascotImages = useAppStore((s) => s.mascotImages);
   const addNote = useAppStore((s) => s.addNote);
   const toggleNote = useAppStore((s) => s.toggleNote);
@@ -66,7 +67,7 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
 
   const firstName = currentUser?.name?.split(' ')[0] || 'Criativo';
   const mascote = useMemo(() => mascoteDoDia(mascotImages), [mascotImages]);
-  const frase = useMemo(() => fraseDoDia(), []);
+  const frase = useMemo(() => fraseDoDia(dashboardPhrases), [dashboardPhrases]);
 
   const semana = useMemo(() => resumoDaSemana(clients, tasks), [clients, tasks]);
   const carga = useMemo(() => cargaPorDia(tasks), [tasks]);

@@ -210,9 +210,17 @@ export function initFirestoreSync() {
     const brandingDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
     onSnapshot(brandingDocRef, (docSnap) => {
       if (!docSnap.exists()) return;
-      const dados = docSnap.data() as { mascotImages?: string[] };
+      const dados = docSnap.data() as {
+        mascotImages?: string[];
+        dashboardPhrases?: string[];
+      };
       if (Array.isArray(dados?.mascotImages)) {
         useAppStore.setState({ mascotImages: dados.mascotImages });
+      }
+      // Lista vazia é uma escolha válida (voltar ao padrão é outra coisa),
+      // então só ignoramos quando o campo não é lista.
+      if (Array.isArray(dados?.dashboardPhrases)) {
+        useAppStore.setState({ dashboardPhrases: dados.dashboardPhrases });
       }
     }, (error) => {
       console.warn('Listener do mascote:', error.message);
@@ -364,6 +372,19 @@ export async function syncMascotToCloud(mascotImages: string[]) {
   if (isCloudSyncDisabled()) return;
   const ref = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
   await setDoc(ref, sanitizeForFirestore({ mascotImages }), { merge: true });
+}
+
+/**
+ * Frases da saudação do Início.
+ *
+ * Moram no mesmo documento do mascote porque são a mesma coisa: o tom com
+ * que o painel fala com a equipe. Texto é leve, então não há risco de
+ * estourar o limite de 1 MB do documento como acontece com as imagens.
+ */
+export async function syncDashboardPhrasesToCloud(dashboardPhrases: string[]) {
+  if (isCloudSyncDisabled()) return;
+  const ref = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
+  await setDoc(ref, sanitizeForFirestore({ dashboardPhrases }), { merge: true });
 }
 
 export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {
