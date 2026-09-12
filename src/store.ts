@@ -1160,6 +1160,15 @@ interface BeeWaveState {
   tasks: Task[];
   addTask: (task: Partial<Task>) => Task;
   duplicateTask: (taskId: string) => Task | undefined;
+  /**
+   * Últimas alterações de pauta, para o Ctrl+Z.
+   *
+   * Fica só em memória: desfazer algo feito ontem, depois de recarregar a
+   * página, confunde mais do que ajuda. Exclusão não entra aqui porque já
+   * tem rede própria — a lixeira, que guarda 30 dias.
+   */
+  undoStack: { taskId: string; before: Partial<Task>; label: string }[];
+  undoLast: () => string | null;
   updateTask: (id: string, data: Partial<Task>) => void;
   deleteTask: (id: string) => void;
   setTaskStatus: (id: string, status: any) => void;
@@ -1292,6 +1301,55 @@ interface BeeWaveState {
   resetAllData: () => void;
 }
 
+
+/**
+ * Guarda o valor anterior dos campos que estão prestes a mudar.
+ *
+ * Só os campos tocados, não a pauta inteira: desfazer precisa devolver o
+ * que foi alterado sem ressuscitar o resto de um estado velho, caso um
+ * colega tenha mexido em outro campo no meio do caminho.
+ *
+ * A pilha tem teto porque vive em memória e o modal de tarefa grava a cada
+ * saída de campo — sem limite, uma tarde de edição viraria milhares de
+ * entradas.
+ */
+const TETO_DESFAZER = 40;
+
+const mesmoValor = (a: unknown, b: unknown) =>
+  a === b || JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+function registrarDesfazer(
+  get: () => BeeWaveState,
+  set: (fn: (state: BeeWaveState) => Partial<BeeWaveState>) => void,
+  taskId: string,
+  patch: Partial<Task>,
+  label: string
+) {
+  const atual = get().tasks.find((t) => t.id === taskId);
+  if (!atual) return;
+
+  const before: Partial<Task> = {};
+  let mudouAlgo = false;
+
+  for (const campo of Object.keys(patch) as (keyof Task)[]) {
+    if (campo === 'activity' || campo === 'updatedAt') continue;
+    // Só entra na pilha o campo que realmente muda de valor.
+    //
+    // O modal de tarefa grava o rascunho inteiro ao fechar, mesmo quando
+    // ninguém tocou em nada. Sem esta comparação, cada abrir-e-fechar
+    // empilhava uma entrada vazia e o Ctrl+Z gastava o primeiro toque
+    // desfazendo coisa nenhuma, em vez da mudança que importava.
+    if (mesmoValor(atual[campo], patch[campo])) continue;
+    before[campo] = atual[campo] as never;
+    mudouAlgo = true;
+  }
+  if (!mudouAlgo) return;
+
+  set((state) => ({
+    undoStack: [...state.undoStack, { taskId, before, label }].slice(-TETO_DESFAZER),
+  }));
+}
+
 export const useAppStore = create<BeeWaveState>()(
   persist(
     (set, get) => ({
@@ -1312,6 +1370,7 @@ export const useAppStore = create<BeeWaveState>()(
        * Visões, filtros, regras de cor e colunas viram dados do usuário.
        * Tudo aqui é persistido junto com o resto da store.
        * ---------------------------------------------------------------- */
+      undoStack: [],
       taskViews: buildDefaultViews(),
       activeViewId: '',
       customProperties: [],
@@ -1339,6 +1398,26 @@ export const useAppStore = create<BeeWaveState>()(
 
       addTaskView: (view) =>
         set((state) => ({ taskViews: [...state.taskViews, view], activeViewId: view.id, viewsDirty: true })),
+
+      undoLast: () => {
+        const pilha = get().undoStack;
+        const ultimo = pilha[pilha.length - 1];
+        if (!ultimo) return null;
+        set({ undoStack: pilha.slice(0, -1) });
+
+        // Aplica direto, sem passar por updateTask: senão o próprio desfazer
+        // entraria na pilha e o Ctrl+Z ficaria alternando entre dois estados.
+        let restaurada: Task | undefined;
+        set((state) => ({
+          tasks: state.tasks.map((t) => {
+            if (t.id !== ultimo.taskId) return t;
+            restaurada = { ...t, ...ultimo.before, updatedAt: new Date().toISOString() };
+            return restaurada;
+          }),
+        }));
+        if (restaurada) syncTaskToCloud(restaurada);
+        return ultimo.label;
+      },
 
       resetTaskViews: () => {
         const padrao = buildDefaultViews();
@@ -1890,6 +1969,7 @@ export const useAppStore = create<BeeWaveState>()(
         return duplicated;
       },
       updateTask: (id, data) => {
+        registrarDesfazer(get, set, id, data, 'edição');
         let updated: Task | undefined;
         set((state) => {
           const nextTasks = state.tasks.map((t) => {
@@ -1958,6 +2038,7 @@ export const useAppStore = create<BeeWaveState>()(
         deleteTaskFromCloud(id);
       },
       setTaskStatus: (id, status) => {
+        registrarDesfazer(get, set, id, { status }, 'mudança de status');
         let updated: Task | undefined;
         set((state) => {
           const nextTasks = state.tasks.map((t) => {

@@ -13,6 +13,7 @@ import { ClientPortalView } from './components/ClientPortalView';
 import { TaskWorkflowModal } from './components/TaskWorkflowModal';
 import { CloudSyncModal } from './components/CloudSyncModal';
 import { GlobalTimerWidget } from './components/GlobalTimerWidget';
+import { Toast } from './components/ui';
 import { TrashView } from './components/TrashView';
 import { CampaignsView } from './components/CampaignsView';
 import { LogIn, Sparkles, ShieldCheck, Eye, EyeOff, UserCheck, AlertCircle, LogOut } from 'lucide-react';
@@ -26,6 +27,7 @@ export function App() {
   const addTask = useAppStore((s) => s.addTask);
   const allTasks = useAppStore((s) => s.tasks);
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
+  const undoLast = useAppStore((s) => s.undoLast);
 
   const [currentTab, setCurrentTab] = useState<string>(() => {
     try {
@@ -47,6 +49,7 @@ export function App() {
 
   const [activeWorkflowTaskId, setActiveWorkflowTaskId] = useState<string | null>(null);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
+  const [undoToast, setUndoToast] = useState<string | null>(null);
 
   // Sync navigation to localStorage
   useEffect(() => {
@@ -167,11 +170,32 @@ export function App() {
         if (!activeWorkflowTaskId && isCloudModalOpen) {
           setIsCloudModalOpen(false);
         }
+        return;
+      }
+
+      // Ctrl+Z / Cmd+Z desfaz a última alteração de pauta.
+      //
+      // Dentro de um campo de texto quem manda é o desfazer do navegador:
+      // roubar o atalho ali faria a tecla apagar a mudança de status em vez
+      // da palavra que a pessoa acabou de digitar.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+        const alvo = e.target as HTMLElement | null;
+        const digitando =
+          !!alvo &&
+          (alvo.tagName === 'INPUT' ||
+            alvo.tagName === 'TEXTAREA' ||
+            alvo.tagName === 'SELECT' ||
+            alvo.isContentEditable);
+        if (digitando) return;
+
+        const label = undoLast();
+        e.preventDefault();
+        setUndoToast(label ? `Desfeita a última ${label}.` : 'Nada para desfazer.');
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeWorkflowTaskId, isCloudModalOpen]);
+  }, [activeWorkflowTaskId, isCloudModalOpen, undoLast]);
 
   const handleOpenNewTask = (prefillData?: any) => {
     const newTask = addTask(prefillData || {});
@@ -419,6 +443,8 @@ export function App() {
 
       {/* Floating Realtime Timer Widget (Discrete white/slate floating badge) */}
       <GlobalTimerWidget onOpenTask={(tId) => setActiveWorkflowTaskId(tId)} />
+
+      <Toast message={undoToast} onDismiss={() => setUndoToast(null)} />
 
       {/* Cloud Sync & Backup Modal */}
       <CloudSyncModal
