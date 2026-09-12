@@ -1,4 +1,48 @@
 /**
+ * Exporta o canvas mantendo o canal alfa.
+ *
+ * WebP guarda transparência e pesa uma fração do PNG: um render 3D de
+ * 560x560 sai com ~44 KB em WebP contra ~391 KB em PNG. Seis poses em PNG
+ * passavam de 2,3 MB e estouravam o limite de 1 MiB por documento do
+ * Firestore — era por isso que publicar o mascote para a equipe falhava.
+ *
+ * Navegador que não sabe escrever WebP devolve um data URL de PNG; nesse
+ * caso aceitamos o PNG em vez de entregar imagem quebrada.
+ */
+function exportarComAlfa(canvas: HTMLCanvasElement, quality: number): string {
+  const webp = canvas.toDataURL('image/webp', quality);
+  return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png');
+}
+
+/**
+ * Reencoda um data URL já existente para o formato leve com transparência.
+ *
+ * Serve para as poses que entraram como PNG antes desta mudança: sem isso
+ * elas continuariam pesadas e a publicação continuaria falhando.
+ */
+export async function reencodeWithAlpha(dataUrl: string, quality = 0.85): Promise<string> {
+  if (dataUrl.startsWith('data:image/webp')) return dataUrl;
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onerror = () => resolve(dataUrl);
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(dataUrl);
+        ctx.drawImage(img, 0, 0);
+        resolve(exportarComAlfa(canvas, quality));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+    img.src = dataUrl;
+  });
+}
+
+/**
  * Compresses an image File using HTML5 Canvas to a lightweight, high-quality Data URL.
  * Prevents LocalStorage QuotaExceededError and Firestore 1MB document limit issues.
  */
@@ -57,7 +101,7 @@ export async function compressImage(
             ctx.drawImage(img, 0, 0, width, height);
 
             let compressedDataUrl = preserveTransparency
-              ? canvas.toDataURL('image/png')
+              ? exportarComAlfa(canvas, quality)
               : canvas.toDataURL('image/jpeg', quality);
 
             // If image is still larger than 120KB (~160,000 base64 chars), do a fast second-pass reduction
@@ -75,7 +119,7 @@ export async function compressImage(
                 }
                 ctx2.drawImage(img, 0, 0, secondWidth, secondHeight);
                 compressedDataUrl = preserveTransparency
-                  ? canvas2.toDataURL('image/png')
+                  ? exportarComAlfa(canvas2, 0.75)
                   : canvas2.toDataURL('image/jpeg', 0.6);
               }
             }

@@ -42,6 +42,7 @@ import {
   CustomProperty,
 } from './types';
 import { FRASES_PADRAO } from './lib/weekPlan';
+import { reencodeWithAlpha } from './utils/imageCompressor';
 import { buildDefaultViews } from './lib/taskViews';
 import { EMELY_STRATEGY_DOCUMENT } from './data/emelyStrategy';
 
@@ -1419,10 +1420,15 @@ export const useAppStore = create<BeeWaveState>()(
       mascotImages: [],
       dashboardPhrases: FRASES_PADRAO,
 
-      addMascotImages: (dataUrls) => {
+      addMascotImages: async (dataUrls) => {
         // Teto de 12: são imagens em base64 e há limite tanto no navegador
         // quanto no documento do Firestore.
-        const proximas = [...get().mascotImages, ...dataUrls].slice(0, 12);
+        //
+        // As poses já guardadas passam pelo reencode junto das novas: quem
+        // subiu antes da mudança tem PNG de ~390 KB cada, e só trocar o
+        // formato das novas deixaria a publicação falhando do mesmo jeito.
+        const antigas = await Promise.all(get().mascotImages.map((p) => reencodeWithAlpha(p)));
+        const proximas = [...antigas, ...dataUrls].slice(0, 12);
         set({ mascotImages: proximas });
         return syncMascotToCloud(proximas);
       },

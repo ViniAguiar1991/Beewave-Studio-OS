@@ -236,15 +236,23 @@ const SecaoInicio: React.FC<{ onAviso: (m: string) => void }> = ({ onAviso }) =>
 
     try {
       const prontas = await Promise.all(
-        escolhidas.map((f) => compressImage(f, 560, 560, 1, true))
+        escolhidas.map((f) => compressImage(f, 560, 560, 0.85, true))
       );
       await addMascotImages(prontas);
       onAviso(`${prontas.length === 1 ? 'Pose enviada' : `${prontas.length} poses enviadas`}.`);
-    } catch {
-      // Sem aviso, o usuário acharia que salvou para todo mundo.
-      setErroMascote(
-        'As poses ficaram salvas neste navegador, mas não foi possível publicar para a equipe. Tente de novo mais tarde.'
-      );
+    } catch (err: any) {
+      // Sem aviso, o usuário acharia que salvou para todo mundo. E "tente
+      // mais tarde" era pior ainda quando o problema é peso: esperar não
+      // resolve, tirar pose resolve.
+      if (err?.name === 'MascoteGrandeDemais') {
+        setErroMascote(
+          `As poses somam ${err.pesoKb} KB e o limite por envio é 900 KB. Elas ficaram salvas neste navegador, mas para publicar à equipe deixe ${err.cabem === 1 ? 'só uma pose' : `até ${err.cabem} poses`} ou use imagens menores.`
+        );
+      } else {
+        setErroMascote(
+          'As poses ficaram salvas neste navegador, mas não foi possível publicar para a equipe. Confira a conexão e tente de novo.'
+        );
+      }
     }
   };
 

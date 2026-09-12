@@ -368,8 +368,30 @@ export async function publishTaskViewsToCloud(
  * limite do Firestore é 1 MB por documento — misturá-las com o resto da
  * configuração derrubaria as duas coisas de uma vez.
  */
+/** Documento do Firestore: 1 MiB. Deixamos folga para os outros campos. */
+const TETO_DO_DOCUMENTO = 900 * 1024;
+
+export class MascoteGrandeDemais extends Error {
+  constructor(public pesoKb: number, public cabem: number) {
+    super('As poses somam mais que o limite de um documento do Firestore.');
+    this.name = 'MascoteGrandeDemais';
+  }
+}
+
 export async function syncMascotToCloud(mascotImages: string[]) {
   if (isCloudSyncDisabled()) return;
+
+  // Checagem antes de tentar: o erro do Firestore por documento grande é
+  // genérico, e sem isso a tela dizia só "não foi possível publicar".
+  const peso = mascotImages.reduce((soma, img) => soma + img.length, 0);
+  if (peso > TETO_DO_DOCUMENTO) {
+    const medio = Math.max(1, Math.round(peso / mascotImages.length));
+    throw new MascoteGrandeDemais(
+      Math.round(peso / 1024),
+      Math.max(0, Math.floor(TETO_DO_DOCUMENTO / medio))
+    );
+  }
+
   const ref = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
   await setDoc(ref, sanitizeForFirestore({ mascotImages }), { merge: true });
 }
