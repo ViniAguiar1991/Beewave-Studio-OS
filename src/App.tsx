@@ -375,10 +375,6 @@ export function App() {
                 setSelectedClientId(cId);
                 setCurrentTab('clientes');
               }}
-              onOpenTrash={() => {
-                setSelectedClientId(null);
-                setCurrentTab('lixeira');
-              }}
             />
           )}
 

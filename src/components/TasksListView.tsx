@@ -2,10 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   Plus,
   Search,
-  LayoutGrid,
-  Rows3,
-  CalendarDays,
-  Trash2,
   X,
   Settings2,
 } from 'lucide-react';
@@ -30,7 +26,6 @@ interface TasksListViewProps {
   onSelectTask: (taskId: string) => void;
   onNewTask: (prefill?: Partial<Task>) => void;
   onSelectClient: (clientId: string) => void;
-  onOpenTrash: () => void;
 }
 
 /**
@@ -50,7 +45,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   onSelectTask,
   onNewTask,
   onSelectClient,
-  onOpenTrash,
 }) => {
   const tasks = useAppStore((s) => s.tasks);
   const clients = useAppStore((s) => s.clients);
@@ -61,7 +55,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   const customProperties = useAppStore((s) => s.customProperties);
   const taskViews = useAppStore((s) => s.taskViews);
   const activeViewId = useAppStore((s) => s.activeViewId);
-  const trash = useAppStore((s) => s.trash || []);
   const currentUser = useCurrentUser();
 
   const setActiveView = useAppStore((s) => s.setActiveView);
@@ -134,6 +127,40 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
     );
 
+  // Cliente escolhido também sobrevive ao logout, pelo mesmo motivo dos
+  // atalhos: quem atende a Perfetto de manhã não quer escolher de novo.
+  const chaveCliente = `beewave_client_filter_${currentUser?.id || 'anon'}`;
+  const [clienteFiltro, setClienteFiltro] = useState<string>(() => {
+    try {
+      return localStorage.getItem(chaveCliente) || 'all';
+    } catch {
+      return 'all';
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(chaveCliente, clienteFiltro);
+    } catch {
+      /* sem persistência; não é crítico */
+    }
+  }, [chaveCliente, clienteFiltro]);
+
+  // Cliente excluído não pode deixar a lista presa num filtro que zera tudo.
+  React.useEffect(() => {
+    if (clienteFiltro !== 'all' && !clients.some((c) => c.id === clienteFiltro)) {
+      setClienteFiltro('all');
+    }
+  }, [clients, clienteFiltro]);
+
+  const clientesOrdenados = useMemo(
+    () =>
+      [...clients].sort((a, b) =>
+        (a.company || a.name || '').localeCompare(b.company || b.name || '', 'pt-BR')
+      ),
+    [clients]
+  );
+
   const clearQuick = () => setQuickStatuses([]);
   const quickActive = quickStatuses.length > 0;
 
@@ -164,6 +191,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
 
       // Status marcados somam entre si (OU); "minhas" restringe (E).
       if (quickStatuses.length > 0 && !quickStatuses.includes(t.status)) return false;
+      if (clienteFiltro !== 'all' && t.clientId !== clienteFiltro) return false;
 
       if (!term) return true;
       const client = clients.find((c) => c.id === t.clientId);
@@ -175,17 +203,11 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     });
 
     return sortTasks(filtered, view.sort, ctx);
-  }, [tasks, view, ctx, search, clients, quickStatuses]);
+  }, [tasks, view, ctx, search, clients, quickStatuses, clienteFiltro]);
 
   if (!view) return null;
 
   const groupableFields = allFields(customProperties).filter((f) => f.groupable);
-
-  const modes: { key: TaskView['mode']; label: string; icon: typeof Rows3 }[] = [
-    { key: 'list', label: 'Lista', icon: Rows3 },
-    { key: 'kanban', label: 'Quadro', icon: LayoutGrid },
-    { key: 'calendar', label: 'Calendário', icon: CalendarDays },
-  ];
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 pb-16">
@@ -202,16 +224,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {trash.length > 0 && (
-            <button
-              onClick={onOpenTrash}
-              className="inline-flex items-center gap-1.5 h-10 px-3 rounded-lg t-ui text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Lixeira
-              <span className="tabular-nums text-slate-400">{trash.length}</span>
-            </button>
-          )}
           <Button variant="primary" icon={Plus} onClick={() => onNewTask()}>
             Nova tarefa
           </Button>
@@ -236,6 +248,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
           if (window.confirm(`Excluir a visão "${view.name}"?`)) deleteTaskView(view.id);
         }}
         onResetViews={resetTaskViews}
+        groupableFields={groupableFields}
         onAddProperty={addCustomProperty}
         onDeleteProperty={deleteCustomProperty}
       />
@@ -289,49 +302,31 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
           )}
         </div>
 
-        <div className="flex items-center rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden">
-          {modes.map(({ key, label, icon: Icon }) => {
-            const isActive = view.mode === key;
-            return (
-              <button
-                key={key}
-                onClick={() => updateTaskView(view.id, { mode: key })}
-                aria-pressed={isActive}
-                className={`inline-flex items-center gap-1.5 h-9 px-3 t-ui transition-colors cursor-pointer ${
-                  isActive
-                    ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {view.mode === 'kanban' && (
-          <label className="flex items-center gap-2 t-meta text-slate-500">
-            Agrupar por
-            <select
-              value={view.groupBy || 'status'}
-              onChange={(e) => updateTaskView(view.id, { groupBy: e.target.value })}
-              className="h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-2 t-ui text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white"
-            >
-              {groupableFields.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        {/* Cliente ao lado da busca: é o recorte mais comum do dia, "o que
+            tem da Daxx?", e antes exigia montar uma condição na engrenagem. */}
+        <select
+          value={clienteFiltro}
+          onChange={(e) => setClienteFiltro(e.target.value)}
+          aria-label="Filtrar por cliente"
+          className={`h-9 rounded-lg border bg-transparent pl-3 pr-8 t-ui cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors ${
+            clienteFiltro !== 'all'
+              ? 'border-slate-900 dark:border-white text-slate-950 dark:text-white font-medium'
+              : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          <option value="all">Todos os clientes</option>
+          {clientesOrdenados.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.company || c.name}
+            </option>
+          ))}
+        </select>
 
         <button
           onClick={() => setSettingsOpen((v) => !v)}
           aria-expanded={settingsOpen}
           aria-label="Configurar visão"
-          title="Filtros, cores, colunas e ordenação"
+          title="Visualização, filtros, cores, colunas e ordenação"
           className={`ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-lg t-ui transition-colors cursor-pointer ${
             settingsOpen
               ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950'
