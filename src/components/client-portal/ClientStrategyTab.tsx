@@ -47,6 +47,8 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
 }) => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [rascunho, setRascunho] = useState<ClientStrategyDocument | null>(null);
+  /** De onde veio o rascunho, quando veio de um arquivo importado. */
+  const [importado, setImportado] = useState<string | null>(null);
   const editando = !!rascunho;
 
   /**
@@ -60,7 +62,10 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
   );
 
   // Trocar de cliente no seletor do portal descarta o rascunho do anterior.
-  useEffect(() => setRascunho(null), [currentClient.id]);
+  useEffect(() => {
+    setRascunho(null);
+    setImportado(null);
+  }, [currentClient.id]);
 
   const capitulosVisiveis = useMemo(
     () => (documento?.chapters || []).filter((c) => !c.oculto),
@@ -111,7 +116,29 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
     if (!rascunho) return;
     onUpdateStrategy?.({ ...rascunho, updatedAt: new Date().toISOString() });
     setRascunho(null);
+    setImportado(null);
   };
+
+  const descartar = () => {
+    if (!window.confirm('Descartar as alterações que ainda não foram salvas?')) return;
+    setRascunho(null);
+    setImportado(null);
+  };
+
+  const importadorModal = (
+    <StrategyImportModal
+      isOpen={isImportModalOpen}
+      onClose={() => setIsImportModalOpen(false)}
+      clientName={currentClient.company}
+      onImported={({ documento: doc, arquivo, capitulos, blocos }) => {
+        setRascunho(normalizarDocumento(doc, currentClient.company));
+        setImportado(
+          `${arquivo} · ${capitulos} ${capitulos === 1 ? 'capítulo' : 'capítulos'}, ${blocos} blocos`
+        );
+        window.scrollTo({ top: 0 });
+      }}
+    />
+  );
 
   const comecarDoZero = () =>
     setRascunho({
@@ -131,10 +158,9 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
         doc={rascunho}
         nomeCliente={currentClient.company}
         onChange={setRascunho}
+        importado={importado}
         onSalvar={salvar}
-        onDescartar={() => {
-          if (window.confirm('Descartar as alterações que ainda não foram salvas?')) setRascunho(null);
-        }}
+        onDescartar={descartar}
       />
     );
   }
@@ -165,12 +191,7 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
             ) : undefined
           }
         />
-        <StrategyImportModal
-          isOpen={isImportModalOpen}
-          onClose={() => setIsImportModalOpen(false)}
-          clientName={currentClient.company}
-          onSaveStrategy={(s) => onUpdateStrategy?.(s)}
-        />
+        {importadorModal}
       </div>
     );
   }
@@ -307,12 +328,7 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
         </article>
       </div>
 
-      <StrategyImportModal
-        isOpen={isImportModalOpen}
-        onClose={() => setIsImportModalOpen(false)}
-        clientName={currentClient.company}
-        onSaveStrategy={(s) => onUpdateStrategy?.(s)}
-      />
+      {importadorModal}
     </div>
   );
 };
@@ -325,9 +341,11 @@ const EditorEstrategia: React.FC<{
   doc: ClientStrategyDocument;
   nomeCliente: string;
   onChange: (d: ClientStrategyDocument) => void;
+  /** Resumo do arquivo importado, quando o rascunho veio de uma importação. */
+  importado?: string | null;
   onSalvar: () => void;
   onDescartar: () => void;
-}> = ({ doc, nomeCliente, onChange, onSalvar, onDescartar }) => {
+}> = ({ doc, nomeCliente, onChange, importado, onSalvar, onDescartar }) => {
   const capitulos = doc.chapters || [];
   const destaques = doc.destaques || [];
   const [novoBlocoEm, setNovoBlocoEm] = useState<string | null>(null);
@@ -352,7 +370,13 @@ const EditorEstrategia: React.FC<{
       {/* Barra fixa: onde está e como sair */}
       <div className="sticky top-0 z-30 -mx-5 sm:-mx-8 px-5 sm:px-8 py-3 mb-8 bg-amber-50/95 dark:bg-amber-950/60 backdrop-blur border-b border-amber-200 dark:border-amber-900 flex items-center justify-between gap-4 flex-wrap">
         <p className="t-ui text-amber-900 dark:text-amber-200">
-          Editando a estratégia. O cliente só vê as mudanças depois de salvar.
+          {importado ? (
+            <>
+              Importado de {importado}. Revise e salve — o cliente só vê depois de salvar.
+            </>
+          ) : (
+            'Editando a estratégia. O cliente só vê as mudanças depois de salvar.'
+          )}
         </p>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="sm" onClick={onDescartar}>

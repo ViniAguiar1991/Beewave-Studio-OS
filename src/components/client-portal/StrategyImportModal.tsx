@@ -1,302 +1,190 @@
-import React, { useState } from 'react';
-import { ClientStrategyDocument } from '../../types';
-import { EMELY_STRATEGY_DOCUMENT } from '../../data/emelyStrategy';
-import { parseStrategyDocument } from '../../utils/strategyDocumentParser';
-import {
-  X,
-  Sparkles,
-  Upload,
-  FileText,
-  Loader2,
-  CheckCircle,
-  Copy,
-  BookOpen,
-} from 'lucide-react';
-import confetti from 'canvas-confetti';
+import React, { useEffect, useRef, useState } from 'react';
+import { FileUp, X } from 'lucide-react';
+import { Button } from '../ui';
+import { importarEstrategia, ResultadoImportacao } from './strategy/importar/importarArquivo';
 
 interface StrategyImportModalProps {
   isOpen: boolean;
   onClose: () => void;
   clientName: string;
-  onSaveStrategy: (strategy: ClientStrategyDocument) => void;
+  /**
+   * Recebe o documento lido. Quem chama abre no editor: a importação nunca
+   * publica direto, porque nenhum leitor de arquivo acerta 100% — a agência
+   * revisa antes de o cliente ver.
+   */
+  onImported: (resultado: ResultadoImportacao & { arquivo: string }) => void;
 }
 
+/**
+ * Importar documento — escolhe o arquivo (ou cola o texto) e abre no editor.
+ *
+ * Tudo acontece no navegador: o PDF e o Word são lidos aqui mesmo, sem
+ * servidor e sem IA. A estrutura sai do próprio layout do arquivo — tamanho
+ * da fonte vira título, tabela vira cartões, SWOT vira quadro.
+ */
 export const StrategyImportModal: React.FC<StrategyImportModalProps> = ({
   isOpen,
   onClose,
   clientName,
-  onSaveStrategy,
+  onImported,
 }) => {
-  const [rawText, setRawText] = useState('');
-  const [fileName, setFileName] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [parsedPreview, setParsedPreview] = useState<ClientStrategyDocument | null>(null);
-  const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [lendo, setLendo] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [colado, setColado] = useState('');
+  const [arrastando, setArrastando] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setLendo(null);
+      setErro(null);
+      setColado('');
+      setArrastando(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && !lendo && onClose();
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [isOpen, lendo, onClose]);
 
   if (!isOpen) return null;
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setFileName(file.name);
-    setErrorNotice(null);
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      if (content) {
-        setRawText(content);
-      }
-    };
-    reader.onerror = () => {
-      setErrorNotice('Não foi possível ler o arquivo. Você pode colar o texto diretamente abaixo.');
-    };
-    reader.readAsText(file);
-  };
-
-  const handleLoadEmelyTemplate = () => {
-    setParsedPreview(EMELY_STRATEGY_DOCUMENT);
-    setFileName('Estratégia_Emely_Moda_Festa.pdf');
-    setRawText(
-      `PLANO DE MARCA, CONTEÚDO E AQUISIÇÃO • SETEMBRO 2026\n\n` +
-      `Emely Moda Festa\n` +
-      `Estratégia para ampliar a presença e transformar procura em vendas.\n\n` +
-      `01 · MARCA E PÚBLICOS - Marca e proposta de valor\n` +
-      `02 · OFERTA E DEMANDA - Portfólio e públicos\n` +
-      `03 · DA OCASIÃO AO PÓS-EVENTO - Jornada e atendimento\n` +
-      `04 · CONTEÚDO E LINGUAGEM - Linhas editoriais\n` +
-      `05 · PRESENÇA E AQUISIÇÃO - Meta Ads e Google\n` +
-      `06 · MERCADO E SWOT - Forças e Fraquezas\n` +
-      `07 · KPIS E MENSURAÇÃO - Metas do trimestre\n` +
-      `08 · PLANO DE 90 DIAS - Cronograma de aceleração\n` +
-      `09 · ESCOPO E RESPONSABILIDADES - Divisão de tarefas\n` +
-      `10 · GLOSSÁRIO E FONTES - Termos técnicos`
-    );
-  };
-
-  const handleProcessDocument = async () => {
-    if (!rawText.trim()) {
-      setErrorNotice('Por favor, cole o texto do documento ou faça upload de um arquivo.');
-      return;
-    }
-
-    setIsProcessing(true);
-    setErrorNotice(null);
-
+  const ler = async (entrada: File | string) => {
+    const nome = typeof entrada === 'string' ? 'texto colado' : entrada.name;
+    setErro(null);
+    setLendo(nome);
     try {
-      const result = await parseStrategyDocument(rawText, clientName);
-      setParsedPreview(result);
-    } catch (err: any) {
-      setErrorNotice('Ocorreu um erro ao interpretar o documento. Tente novamente.');
+      const resultado = await importarEstrategia(entrada, clientName);
+      onImported({ ...resultado, arquivo: nome });
+      onClose();
+    } catch (e: any) {
+      console.error('[estratégia] importação falhou', e);
+      setErro(e?.message || 'Não foi possível ler este arquivo.');
     } finally {
-      setIsProcessing(false);
+      setLendo(null);
+      if (inputRef.current) inputRef.current.value = '';
     }
   };
 
-  const handleConfirmApply = () => {
-    if (!parsedPreview) return;
-    onSaveStrategy(parsedPreview);
-    confetti({
-      particleCount: 80,
-      spread: 70,
-      origin: { y: 0.6 },
-    });
-    onClose();
+  const soltar = (e: React.DragEvent) => {
+    e.preventDefault();
+    setArrastando(false);
+    const arquivo = e.dataTransfer.files?.[0];
+    if (arquivo && !lendo) ler(arquivo);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
-        {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400">
-              <Sparkles className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Interpretar Documento de Estratégia
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Envie o documento da marca (como o plano da Emely Noivas) para estruturar as abas no sistema
-              </p>
-            </div>
-          </div>
+    <div className="fixed inset-0 z-50 grid place-items-center p-4 sm:p-6">
+      <div
+        className="absolute inset-0 bg-slate-950/55"
+        onClick={() => !lendo && onClose()}
+        aria-hidden="true"
+      />
+
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="importar-estrategia-titulo"
+        className="relative w-full max-w-xl bg-white dark:bg-[#0f1114] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl"
+        style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
+      >
+        <div className="flex items-center justify-between gap-4 px-6 h-14 border-b border-slate-200 dark:border-slate-800">
+          <h2 id="importar-estrategia-titulo" className="t-ui font-semibold text-slate-950 dark:text-white">
+            Importar estratégia · {clientName}
+          </h2>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            disabled={!!lendo}
+            aria-label="Fechar"
+            className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:text-slate-950 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40"
           >
-            <X className="h-5 w-5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Preset Helper Button */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-0.5">
-              <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
-                <BookOpen className="h-4 w-4 text-emerald-600" />
-                <span>Exemplo Pronto: Plano Completo Emely Noivas (10 Capítulos)</span>
-              </p>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                Carregue instantaneamente a estrutura idêntica aos prints (Noivas, Portfólio, Jornada e Gargalos).
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={handleLoadEmelyTemplate}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors shrink-0 cursor-pointer"
-            >
-              Carregar Modelo Emely
-            </button>
-          </div>
-
-          {/* Upload Area */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
-              1. Selecionar Arquivo (.txt, .md, .doc ou texto)
-            </label>
-            <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 dark:hover:border-emerald-500 rounded-xl p-6 text-center cursor-pointer transition-colors bg-white dark:bg-slate-900/40 group">
-              <Upload className="h-6 w-6 text-slate-400 group-hover:text-emerald-500 transition-colors mb-2" />
-              <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
-                {fileName ? (
-                  <span className="text-emerald-600 font-bold">{fileName}</span>
-                ) : (
-                  'Clique para escolher ou arraste o arquivo aqui'
-                )}
-              </p>
-              <p className="text-[11px] text-slate-400 mt-1">
-                Suporta documentos de texto, notas do Notion ou relatórios em texto
-              </p>
-              <input
-                type="file"
-                accept=".txt,.md,.json,.doc,.docx"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
-          </div>
-
-          {/* Text Area */}
-          <div>
-            <div className="flex items-center justify-between mb-1.5">
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                2. Ou cole o conteúdo do documento aqui:
-              </label>
-              {rawText && (
-                <span className="text-[10px] text-slate-400">
-                  {rawText.length} caracteres
+        <div className="p-6 space-y-5">
+          <label
+            onDragOver={(e) => {
+              e.preventDefault();
+              setArrastando(true);
+            }}
+            onDragLeave={() => setArrastando(false)}
+            onDrop={soltar}
+            className={[
+              'flex flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors',
+              lendo ? 'cursor-wait' : 'cursor-pointer',
+              arrastando
+                ? 'border-slate-950 bg-slate-50 dark:border-white dark:bg-slate-800/60'
+                : 'border-slate-300 hover:border-slate-500 dark:border-slate-700 dark:hover:border-slate-500',
+            ].join(' ')}
+          >
+            {lendo ? (
+              <>
+                <span className="h-5 w-5 rounded-full border-2 border-slate-400 border-r-transparent animate-spin" />
+                <span className="t-ui text-slate-800 dark:text-slate-200">Lendo {lendo}…</span>
+              </>
+            ) : (
+              <>
+                <FileUp className="h-6 w-6 text-slate-400" />
+                <span className="t-ui font-medium text-slate-900 dark:text-white">
+                  Escolher arquivo ou arrastar aqui
                 </span>
-              )}
-            </div>
-            <textarea
-              value={rawText}
-              onChange={(e) => setRawText(e.target.value)}
-              placeholder="Cole aqui o sumário executivo, capítulos ou texto da estratégia da marca..."
-              rows={7}
-              className="w-full text-xs p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 outline-none resize-none font-mono"
+                <span className="t-meta text-slate-500">PDF, Word (.docx), .txt ou .md</span>
+              </>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".pdf,.docx,.txt,.md,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown"
+              disabled={!!lendo}
+              onChange={(e) => {
+                const arquivo = e.target.files?.[0];
+                if (arquivo) ler(arquivo);
+              }}
+              className="hidden"
             />
-          </div>
+          </label>
 
-          {errorNotice && (
-            <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-600 dark:text-rose-400">
-              {errorNotice}
-            </div>
-          )}
-
-          {/* Parse Button */}
-          {!parsedPreview && (
-            <button
-              onClick={handleProcessDocument}
-              disabled={isProcessing || !rawText.trim()}
-              className="w-full py-2.5 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 dark:bg-white dark:hover:bg-slate-100 text-white dark:text-slate-900 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Interpretando capítulos e decisões da marca...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4 text-emerald-400 dark:text-emerald-600" />
-                  <span>Interpretar Documento & Estruturar no Sistema</span>
-                </>
-              )}
-            </button>
-          )}
-
-          {/* Parsed Preview Section */}
-          {parsedPreview && (
-            <div className="p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/80 bg-emerald-50/40 dark:bg-emerald-950/20 space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-400">
-                  <CheckCircle className="h-4 w-4" />
-                  Documento Estruturado com Sucesso!
-                </span>
-                <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                  {parsedPreview.chapters.length} Capítulos Identificados
-                </span>
-              </div>
-
-              <div className="space-y-1">
-                <p className="text-sm font-bold text-slate-900 dark:text-white">
-                  {parsedPreview.title}
-                </p>
-                <p className="text-xs text-slate-600 dark:text-slate-300">
-                  {parsedPreview.subtitle}
-                </p>
-              </div>
-
-              {parsedPreview.keyDecisions && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
-                  <div className="p-2 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800">
-                    <span className="font-bold text-emerald-600 block text-[10px] uppercase">Decisão Central</span>
-                    <span className="text-slate-700 dark:text-slate-300 line-clamp-2">{parsedPreview.keyDecisions.centralDecision}</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800">
-                    <span className="font-bold text-emerald-600 block text-[10px] uppercase">Posicionamento</span>
-                    <span className="text-slate-700 dark:text-slate-300 line-clamp-2">{parsedPreview.keyDecisions.positioning}</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-white/80 dark:bg-slate-900/80 border border-slate-200/60 dark:border-slate-800">
-                    <span className="font-bold text-emerald-600 block text-[10px] uppercase">Prioridade</span>
-                    <span className="text-slate-700 dark:text-slate-300 line-clamp-2">{parsedPreview.keyDecisions.cyclePriority}</span>
-                  </div>
-                </div>
-              )}
-
-              <div className="pt-2 flex flex-wrap gap-1.5">
-                {parsedPreview.chapters.map((ch) => (
-                  <span
-                    key={ch.id || ch.number}
-                    className="px-2 py-0.5 rounded text-[10px] font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300"
-                  >
-                    {ch.number} {ch.title}
-                  </span>
-                ))}
+          <details className="group">
+            <summary className="t-ui text-slate-600 dark:text-slate-400 cursor-pointer select-none hover:text-slate-950 dark:hover:text-white">
+              Ou colar o texto
+            </summary>
+            <div className="mt-3 space-y-3">
+              <textarea
+                value={colado}
+                onChange={(e) => setColado(e.target.value)}
+                rows={8}
+                placeholder={'# Nome do plano\n\n## Marca\nTexto do capítulo…\n\n## Públicos\n- item\n- item'}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 p-3 t-meta text-slate-800 dark:text-slate-100 placeholder-slate-400 outline-none focus:ring-2 focus:ring-slate-950/20 dark:focus:ring-white/20 resize-y font-mono"
+              />
+              <div className="flex justify-end">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={!colado.trim() || !!lendo}
+                  onClick={() => ler(colado)}
+                >
+                  Ler texto
+                </Button>
               </div>
             </div>
-          )}
-        </div>
+          </details>
 
-        {/* Modal Footer */}
-        <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3 bg-slate-50 dark:bg-slate-950/40">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
-          >
-            Cancelar
-          </button>
-
-          {parsedPreview && (
-            <button
-              onClick={handleConfirmApply}
-              className="px-5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+          {erro && (
+            <p
+              role="alert"
+              className="rounded-lg border border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 px-3 py-2.5 t-ui text-rose-700 dark:text-rose-300"
             >
-              <CheckCircle className="h-4 w-4" />
-              <span>Aplicar Estratégia ao Cliente</span>
-            </button>
+              {erro}
+            </p>
           )}
+
+          <p className="t-meta text-slate-500">
+            O documento abre no editor para revisar. O cliente só vê depois de salvar.
+          </p>
         </div>
       </div>
     </div>
