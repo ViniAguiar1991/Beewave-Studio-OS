@@ -22,17 +22,6 @@ interface ClientPortalViewProps {
   onLogout?: () => void;
 }
 
-const TAB_STORAGE_KEY = 'beewave_portal_tab';
-const VALID_TABS: PortalTabKey[] = [
-  'resumo',
-  'aprovacoes',
-  'estrategia',
-  'campanhas',
-  'calendario',
-  'arquivos',
-  'resultados',
-];
-
 /**
  * Portal do Cliente.
  *
@@ -91,23 +80,9 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
     else if (!isClientLocked && initialClientId) setSelectedClientId(initialClientId);
   }, [isClientLocked, lockedClientId, initialClientId]);
 
-  const [activeTab, setActiveTab] = useState<PortalTabKey>(() => {
-    try {
-      const saved = localStorage.getItem(TAB_STORAGE_KEY) as PortalTabKey | null;
-      if (saved && VALID_TABS.includes(saved)) return saved;
-    } catch {
-      /* localStorage indisponível — cai no padrão */
-    }
-    return 'resumo';
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(TAB_STORAGE_KEY, activeTab);
-    } catch {
-      /* sem persistência de aba; não é crítico */
-    }
-  }, [activeTab]);
+  // O portal sempre abre no Resumo, pela mesma razão do app: o cliente
+  // começa pelo retrato da situação, não pela última aba que ficou aberta.
+  const [activeTab, setActiveTab] = useState<PortalTabKey>('resumo');
 
   const [approvalFilter, setApprovalFilter] = useState<'aguardando' | 'ajuste'>('aguardando');
   const [inspectingId, setInspectingId] = useState<string | null>(null);

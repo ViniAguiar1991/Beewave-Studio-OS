@@ -79,12 +79,20 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
 
   const undated = useMemo(() => filtradas.filter((t) => !getPostDay(t)), [filtradas]);
 
+  // Mesma regra do calendário da agência: as sobras da grade são dias reais
+  // do mês vizinho, com as publicações deles, e não casas vazias.
   const cells = useMemo(() => {
     const firstWeekday = new Date(year, month, 1).getDay();
     const dayCount = new Date(year, month + 1, 0).getDate();
-    const out: (string | null)[] = Array(firstWeekday).fill(null);
+    const out: { key: string; foraDoMes: boolean }[] = [];
+    for (let i = firstWeekday; i > 0; i--) {
+      out.push({ key: toDayKey(new Date(year, month, 1 - i)), foraDoMes: true });
+    }
     for (let d = 1; d <= dayCount; d++) {
-      out.push(`${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`);
+      out.push({ key: toDayKey(new Date(year, month, d)), foraDoMes: false });
+    }
+    for (let n = 1; out.length % 7 !== 0; n++) {
+      out.push({ key: toDayKey(new Date(year, month + 1, n)), foraDoMes: true });
     }
     return out;
   }, [year, month]);
@@ -193,10 +201,7 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
           </div>
 
           <div className="grid grid-cols-7">
-            {cells.map((key, i) => {
-              if (!key) {
-                return <div key={`pad-${i}`} className="min-h-[104px] border-b border-r border-slate-100 dark:border-slate-800/60 first:border-l" />;
-              }
+            {cells.map(({ key, foraDoMes }) => {
               const dayTasks = (byDay.get(key) || []).sort(byPostDate);
               const isToday = key === todayKey;
               const dayNumber = Number(key.split('-')[2]);
@@ -204,13 +209,17 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
               return (
                 <div
                   key={key}
-                  className="min-h-[104px] border-b border-r border-slate-100 dark:border-slate-800/60 p-1.5 space-y-1"
+                  className={`min-h-[104px] border-b border-r border-slate-100 dark:border-slate-800/60 p-1.5 space-y-1 ${
+                    foraDoMes ? 'bg-slate-50/60 dark:bg-slate-900/30' : ''
+                  }`}
                 >
                   <span
                     className={`inline-grid h-6 min-w-6 px-1 place-items-center rounded-full t-meta tabular-nums ${
                       isToday
                         ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950 font-semibold'
-                        : 'text-slate-500 dark:text-slate-400'
+                        : foraDoMes
+                          ? 'text-slate-300 dark:text-slate-600'
+                          : 'text-slate-500 dark:text-slate-400'
                     }`}
                   >
                     {dayNumber}

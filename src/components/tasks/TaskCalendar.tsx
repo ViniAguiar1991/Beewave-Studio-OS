@@ -61,12 +61,28 @@ export const TaskCalendar: React.FC<TaskCalendarProps> = ({
 
   const undated = useMemo(() => tasks.filter((t) => !dayOf(t)), [tasks]);
 
+  /**
+   * A grade sempre completa semanas inteiras, e as sobras são dias reais do
+   * mês vizinho — não casas vazias. Antes eram `null`: o calendário de
+   * setembro desenhava 1, 2 e 3 de outubro como espaço em branco, e as pautas
+   * marcadas nesses dias simplesmente não apareciam em lugar nenhum da tela.
+   */
   const cells = useMemo(() => {
     const firstWeekday = new Date(year, month, 1).getDay();
     const dayCount = new Date(year, month + 1, 0).getDate();
-    const out: (string | null)[] = Array(firstWeekday).fill(null);
-    for (let d = 1; d <= dayCount; d++) out.push(keyOf(year, month, d));
-    while (out.length % 7 !== 0) out.push(null);
+    const out: { key: string; foraDoMes: boolean }[] = [];
+
+    for (let i = firstWeekday; i > 0; i--) {
+      const d = new Date(year, month, 1 - i);
+      out.push({ key: keyOf(d.getFullYear(), d.getMonth(), d.getDate()), foraDoMes: true });
+    }
+    for (let d = 1; d <= dayCount; d++) {
+      out.push({ key: keyOf(year, month, d), foraDoMes: false });
+    }
+    for (let n = 1; out.length % 7 !== 0; n++) {
+      const d = new Date(year, month + 1, n);
+      out.push({ key: keyOf(d.getFullYear(), d.getMonth(), d.getDate()), foraDoMes: true });
+    }
     return out;
   }, [year, month]);
 
@@ -125,16 +141,7 @@ export const TaskCalendar: React.FC<TaskCalendarProps> = ({
         </div>
 
         <div className="grid grid-cols-7">
-          {cells.map((key, i) => {
-            if (!key) {
-              return (
-                <div
-                  key={`pad-${i}`}
-                  className="min-h-[124px] border-b border-r border-slate-100 dark:border-slate-800/60 first:border-l bg-slate-50/40 dark:bg-slate-900/20"
-                />
-              );
-            }
-
+          {cells.map(({ key, foraDoMes }) => {
             const list = byDay.get(key) || [];
             const isToday = key === todayKey;
             const isOver = overDay === key;
@@ -155,7 +162,11 @@ export const TaskCalendar: React.FC<TaskCalendarProps> = ({
                   setDragId(null);
                 }}
                 className={`group/day min-h-[124px] border-b border-r border-slate-100 dark:border-slate-800/60 p-1.5 space-y-1 transition-colors ${
-                  isOver ? 'bg-slate-100 dark:bg-slate-800/60' : ''
+                  isOver
+                    ? 'bg-slate-100 dark:bg-slate-800/60'
+                    : foraDoMes
+                      ? 'bg-slate-50/60 dark:bg-slate-900/30'
+                      : ''
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -163,7 +174,9 @@ export const TaskCalendar: React.FC<TaskCalendarProps> = ({
                     className={`inline-grid h-6 min-w-6 px-1 place-items-center rounded-full t-meta tabular-nums ${
                       isToday
                         ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950 font-semibold'
-                        : 'text-slate-500 dark:text-slate-400'
+                        : foraDoMes
+                          ? 'text-slate-300 dark:text-slate-600'
+                          : 'text-slate-500 dark:text-slate-400'
                     }`}
                   >
                     {dayNumber}

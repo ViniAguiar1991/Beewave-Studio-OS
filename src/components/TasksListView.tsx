@@ -19,6 +19,7 @@ import {
   newView,
   sortTasks,
 } from '../lib/taskViews';
+import { semanaDe } from '../lib/weekPlan';
 import { ViewToolbar } from './tasks/ViewToolbar';
 import { TaskTable } from './tasks/TaskTable';
 import { TaskKanban } from './tasks/TaskKanban';
@@ -44,6 +45,83 @@ interface TasksListViewProps {
  * A configuração fica escondida porque é ajuste, não trabalho: quem abre a
  * tela quer ver tarefa, não seletor de coluna.
  */
+
+type FiltroData =
+  | 'all'
+  | 'hoje'
+  | 'amanha'
+  | 'esta_semana'
+  | 'este_mes'
+  | 'atrasados'
+  | 'sem_data'
+  | 'personalizado';
+
+const OPCOES_DATA: { value: FiltroData; label: string }[] = [
+  { value: 'all', label: 'Qualquer data' },
+  { value: 'hoje', label: 'Hoje' },
+  { value: 'amanha', label: 'Amanhã' },
+  { value: 'esta_semana', label: 'Esta semana' },
+  { value: 'este_mes', label: 'Este mês' },
+  { value: 'atrasados', label: 'Atrasados' },
+  { value: 'sem_data', label: 'Sem data' },
+  { value: 'personalizado', label: 'Personalizado' },
+];
+
+const chaveDia = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/**
+ * Filtro de período sobre a data de publicação.
+ *
+ * Voltou como era antes da reescrita da Central de Tarefas, com as mesmas
+ * opções. Uma decisão mantida de propósito: "Esta semana" e "Este mês" vão de
+ * hoje até o fim do período. O que ficou para trás e não saiu está em
+ * "Atrasados" — misturar os dois esconderia o atraso no meio do planejado.
+ *
+ * A semana é de segunda a domingo, a mesma do painel inicial. O filtro
+ * antigo começava no domingo, então o domingo nunca entrava em "esta semana"
+ * enquanto o Início contava ele.
+ */
+const passaNoPeriodo = (
+  t: Task,
+  filtro: FiltroData,
+  de: string,
+  ate: string
+): boolean => {
+  if (filtro === 'all') return true;
+  const dia = (t.postDate || t.date || '').split('T')[0];
+
+  if (filtro === 'sem_data') return !dia;
+  if (!dia) return false;
+
+  const hoje = new Date();
+  const hojeK = chaveDia(hoje);
+
+  switch (filtro) {
+    case 'hoje':
+      return dia === hojeK;
+    case 'amanha': {
+      const amanha = new Date(hoje);
+      amanha.setDate(hoje.getDate() + 1);
+      return dia === chaveDia(amanha);
+    }
+    case 'esta_semana':
+      return dia >= hojeK && dia <= semanaDe(hoje).fimChave;
+    case 'este_mes': {
+      const fim = chaveDia(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0));
+      return dia >= hojeK && dia <= fim;
+    }
+    case 'atrasados':
+      return dia < hojeK && t.status !== 'aprovado' && t.status !== 'postado';
+    case 'personalizado':
+      if (de && dia < de) return false;
+      if (ate && dia > ate) return false;
+      return true;
+    default:
+      return true;
+  }
+};
+
 export const TasksListView: React.FC<TasksListViewProps> = ({
   onSelectTask,
   onNewTask,
@@ -156,6 +234,24 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     }
   }, [clients, clienteFiltro]);
 
+  // Período também atravessa sessões, junto dos outros filtros.
+  const chaveData = `beewave_date_filter_${currentUser?.id || 'anon'}`;
+  const [periodo, setPeriodo] = useState<{ filtro: FiltroData; de: string; ate: string }>(() => {
+    try {
+      const salvo = localStorage.getItem(chaveData);
+      if (salvo) return { filtro: 'all', de: '', ate: '', ...JSON.parse(salvo) };
+    } catch {}
+    return { filtro: 'all', de: '', ate: '' };
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(chaveData, JSON.stringify(periodo));
+    } catch {
+      /* sem persistência; não é crítico */
+    }
+  }, [chaveData, periodo]);
+
   const clientesOrdenados = useMemo(
     () =>
       [...clients].sort((a, b) =>
@@ -195,6 +291,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
       // Status marcados somam entre si (OU); "minhas" restringe (E).
       if (quickStatuses.length > 0 && !quickStatuses.includes(t.status)) return false;
       if (clienteFiltro !== 'all' && t.clientId !== clienteFiltro) return false;
+      if (!passaNoPeriodo(t, periodo.filtro, periodo.de, periodo.ate)) return false;
 
       if (!term) return true;
       const client = clients.find((c) => c.id === t.clientId);
@@ -206,7 +303,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     });
 
     return sortTasks(filtered, view.sort, ctx);
-  }, [tasks, view, ctx, search, clients, quickStatuses, clienteFiltro]);
+  }, [tasks, view, ctx, search, clients, quickStatuses, clienteFiltro, periodo]);
 
   if (!view) return null;
 
@@ -329,6 +426,47 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             </option>
           ))}
         </select>
+
+        <select
+          value={periodo.filtro}
+          onChange={(e) => setPeriodo((p) => ({ ...p, filtro: e.target.value as FiltroData }))}
+          aria-label="Filtrar por data de publicação"
+          className={`h-9 rounded-lg border bg-transparent pl-3 pr-8 t-ui cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white transition-colors ${
+            periodo.filtro !== 'all'
+              ? 'border-slate-900 dark:border-white text-slate-950 dark:text-white font-medium'
+              : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+          }`}
+        >
+          {OPCOES_DATA.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+
+        {periodo.filtro === 'personalizado' && (
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1.5 t-meta text-slate-500 dark:text-slate-400">
+              de
+              <input
+                type="date"
+                value={periodo.de}
+                onChange={(e) => setPeriodo((p) => ({ ...p, de: e.target.value }))}
+                className="h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-2 t-ui text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white"
+              />
+            </label>
+            <label className="flex items-center gap-1.5 t-meta text-slate-500 dark:text-slate-400">
+              até
+              <input
+                type="date"
+                value={periodo.ate}
+                min={periodo.de || undefined}
+                onChange={(e) => setPeriodo((p) => ({ ...p, ate: e.target.value }))}
+                className="h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-2 t-ui text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white"
+              />
+            </label>
+          </div>
+        )}
 
         <div className="flex items-center rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden">
           {modes.map(({ key, label, icon: Icon }) => {

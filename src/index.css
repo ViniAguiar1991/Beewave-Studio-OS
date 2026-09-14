@@ -2,6 +2,29 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ----------------------------------------------------------------------------
+   Controles nativos acompanham o tema.
+
+   Sem color-scheme declarado, o navegador desenha a lista de opções de todo
+   <select> e o calendário de todo campo de data no tema claro — mesmo com o
+   app no escuro. A lista abria branca, e as opções herdavam o cinza claro do
+   texto escuro: fundo branco com letra cinza-clara, sem contraste nenhum.
+   ---------------------------------------------------------------------------- */
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+.dark option,
+.dark optgroup {
+  background-color: #0f1114;
+  color: #f5f6f7;
+}
+
+
 @layer base {
   :root {
     --font-sans: 'Host Grotesk', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

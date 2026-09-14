@@ -29,15 +29,13 @@ export function App() {
   const sidebarCollapsed = useAppStore((s) => s.sidebarCollapsed);
   const undoLast = useAppStore((s) => s.undoLast);
 
-  const [currentTab, setCurrentTab] = useState<string>(() => {
-    try {
-      const savedTab = localStorage.getItem('beewave_active_tab');
-      if (savedTab && ['inicio', 'tarefas', 'campanhas', 'clientes', 'colaboradores', 'prompts', 'lixeira', 'admin', 'portal'].includes(savedTab)) {
-        return savedTab;
-      }
-    } catch {}
-    return 'inicio';
-  });
+  // O app sempre abre no Início, para todo mundo. Antes ele reabria na última
+  // tela visitada, então cada pessoa começava o dia num lugar diferente — e
+  // quem tinha fechado dentro do portal de um cliente reabria lá.
+  //
+  // Os filtros da Central de Tarefas continuam lembrados entre sessões: são
+  // preferência de trabalho, não ponto de partida.
+  const [currentTab, setCurrentTab] = useState<string>('inicio');
 
   const [selectedClientId, setSelectedClientId] = useState<string | null>(() => {
     try {
@@ -51,14 +49,6 @@ export function App() {
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
   const [undoToast, setUndoToast] = useState<string | null>(null);
 
-  // Sync navigation to localStorage
-  useEffect(() => {
-    try {
-      if (currentTab) {
-        localStorage.setItem('beewave_active_tab', currentTab);
-      }
-    } catch {}
-  }, [currentTab]);
 
   useEffect(() => {
     try {
