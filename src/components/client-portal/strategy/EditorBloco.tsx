@@ -51,6 +51,14 @@ const PONTO_DA_COR: Record<StrategyBlockCor, string> = {
   ambar: 'bg-amber-500',
 };
 
+const MARCADORES: { valor: NonNullable<StrategyBlock['marcador']>; simbolo: string; nome: string }[] = [
+  { valor: 'ponto', simbolo: '•', nome: 'Marcador de ponto' },
+  { valor: 'check', simbolo: '✓', nome: 'Marcador de confirmação — o que a marca é ou faz' },
+  { valor: 'x', simbolo: '✕', nome: 'Marcador de negação — o que a marca não é ou não faz' },
+];
+
+const SIMBOLO_DO_MARCADOR = { ponto: '•', check: '✓', x: '✕' } as const;
+
 const BotaoIcone: React.FC<{
   rotulo: string;
   onClick: () => void;
@@ -159,6 +167,27 @@ export const EditorBloco: React.FC<{
           {bloco.oculto && <span className="ml-1 t-meta text-slate-400">· oculto para o cliente</span>}
         </div>
 
+        {bloco.tipo === 'lista' && (
+          <div className="mr-auto flex items-center gap-0.5" role="group" aria-label="Marcador da lista">
+            {MARCADORES.map((m) => (
+              <button
+                key={m.valor}
+                type="button"
+                onClick={() => set({ marcador: m.valor === 'ponto' ? undefined : m.valor })}
+                aria-pressed={(bloco.marcador || 'ponto') === m.valor}
+                title={m.nome}
+                className={`h-7 min-w-7 px-1.5 rounded-md t-meta transition-colors cursor-pointer ${
+                  (bloco.marcador || 'ponto') === m.valor
+                    ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-white'
+                    : 'text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {m.simbolo}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-center gap-0.5 opacity-60 group-hover/bloco:opacity-100 focus-within:opacity-100 transition-opacity">
           <BotaoIcone rotulo="Subir bloco" onClick={() => onMover(-1)} disabled={primeiro}>
             <ArrowUp className="h-3.5 w-3.5" />
@@ -215,7 +244,9 @@ export const EditorBloco: React.FC<{
             valor={bloco.texto || ''}
             onChange={(v) => set({ texto: v })}
             placeholder="A frase que merece destaque…"
-            className="text-[19px] leading-relaxed italic text-slate-800 dark:text-slate-200"
+            className={`text-[19px] leading-relaxed text-slate-800 dark:text-slate-200 ${
+              bloco.titulo ? 'font-medium' : 'italic'
+            }`}
           />
           <TextoEditavel
             valor={bloco.legenda || ''}
@@ -250,7 +281,11 @@ export const EditorBloco: React.FC<{
           {itens.map((i, n) => (
             <li key={i.id} className="group/item flex items-start gap-2">
               <span className="shrink-0 pt-1.5 t-meta tabular-nums text-slate-400 w-5 text-right select-none">
-                {bloco.tipo === 'etapas' ? String(n + 1).padStart(2, '0') : '•'}
+                {bloco.tipo === 'etapas'
+                  ? String(n + 1).padStart(2, '0')
+                  : bloco.tipo === 'lista'
+                    ? SIMBOLO_DO_MARCADOR[bloco.marcador || 'ponto']
+                    : '•'}
               </span>
 
               <div className="min-w-0 flex-1">

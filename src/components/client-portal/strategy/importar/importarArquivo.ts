@@ -38,7 +38,9 @@ const contar = (doc: ClientStrategyDocument) => ({
 const numerar = (capitulos: StrategyChapter[]): StrategyChapter[] =>
   capitulos.map((c, i) => {
     const n = String(i + 1).padStart(2, '0');
-    return { ...c, number: n, tag: `${n} · ${c.tag || c.title}` };
+    // Sem rótulo próprio, fica só o número — repetir o título em cima dele
+    // não diz nada.
+    return { ...c, number: n, tag: c.tag ? `${n} · ${c.tag}` : n };
   });
 
 /* ---------------------------------------------------------------------------
@@ -174,48 +176,91 @@ async function lerDocx(arquivo: File, nomeCliente: string): Promise<ClientStrate
 /* ---------------------------------------------------------------------------
  * Texto (.txt, .md ou colado)
  * ------------------------------------------------------------------------- */
-const CABECALHO_CAPITULO = [
-  /^#{1,2}\s+(.+)$/, // "# Título" ou "## Título"
+
+/** Texto sem Markdown de título: "Capítulo 2 — Marca" ou "01 · Marca". */
+const CABECALHO_SEM_MARKDOWN = [
   /^(?:cap[ií]tulo|parte|se[cç][aã]o)\s+\d+\s*[·.:\-–—]?\s*(.*)$/i,
-  // "01 · Marca". Sem o ponto como separador: "1. item" é lista numerada,
-  // não capítulo — senão toda lista virava uma pilha de capítulos.
+  // Sem o ponto como separador: "1. item" é lista numerada, não capítulo.
   /^(\d{1,2})\s*[·:\-–—]\s+(.+)$/,
 ];
 
+/** "## 1. Objetivos do Projeto" → "Objetivos do Projeto": a numeração é automática. */
+const limparTitulo = (t: string) =>
+  corrigirTexto(t.replace(/\*\*/g, '').replace(/^\d{1,2}\s*[.)·:\-–—]\s+/, '').trim());
+
 export function documentoDoTexto(bruto: string, nomeCliente: string): ClientStrategyDocument {
   const linhas = bruto.replace(/\r\n?/g, '\n').split('\n');
+  const nivelDe = (l: string) => l.trim().match(/^(#{1,6})\s+\S/)?.[1].length || 0;
+  const niveis = linhas.map(nivelDe).filter(Boolean);
+
+  /*
+   * Quem é capítulo depende de como o documento foi escrito:
+   * - "# Título" uma vez só, no topo, e "##" depois: # é o nome do plano,
+   *   ## são os capítulos e ### em diante são subtítulos.
+   * - Vários "#": cada # é um capítulo e ## em diante são subtítulos.
+   * Antes todo # e ## virava capítulo, e o primeiro # virava o nome do plano
+   * mesmo quando era só a primeira seção.
+   */
+  let nivelDoTitulo = 0;
+  let nivelDoCapitulo = 0;
+  if (niveis.length) {
+    const menor = Math.min(...niveis);
+    const primeiro = linhas.findIndex((l) => nivelDe(l) > 0);
+    const textoAntes = linhas.slice(0, primeiro).some((l) => l.trim());
+    const maiores = niveis.filter((n) => n > menor);
+    if (niveis.filter((n) => n === menor).length === 1 && !textoAntes && maiores.length) {
+      nivelDoTitulo = menor;
+      nivelDoCapitulo = Math.min(...maiores);
+    } else {
+      nivelDoCapitulo = menor;
+    }
+  }
+
   const capitulos: { titulo: string; linhas: string[] }[] = [];
+  const antesDoPrimeiro: string[] = [];
   let atual: { titulo: string; linhas: string[] } | null = null;
   let tituloDoc = '';
 
-  for (const bruta of linhas) {
-    const linha = bruta.trim();
-    let tituloCapitulo: string | null = null;
+  for (const linha of linhas) {
+    const nivel = nivelDe(linha);
+    const textoTitulo = nivel ? linha.trim().replace(/^#{1,6}\s+/, '') : '';
 
-    for (const padrao of CABECALHO_CAPITULO) {
-      const m = linha.match(padrao);
-      if (m) {
-        tituloCapitulo = corrigirTexto((m[2] ?? m[1] ?? '').replace(/\*\*/g, ''));
-        break;
-      }
-    }
-
-    // "# Título" antes de qualquer capítulo é o nome do documento.
-    if (tituloCapitulo && /^#\s/.test(linha) && !tituloDoc && capitulos.length === 0) {
-      tituloDoc = tituloCapitulo;
+    if (nivel && nivel === nivelDoTitulo && !tituloDoc) {
+      tituloDoc = limparTitulo(textoTitulo);
       continue;
     }
 
-    if (tituloCapitulo) {
+    let tituloCapitulo: string | null = null;
+    if (nivel && nivel === nivelDoCapitulo) {
+      tituloCapitulo = limparTitulo(textoTitulo);
+    } else if (!niveis.length) {
+      for (const padrao of CABECALHO_SEM_MARKDOWN) {
+        const m = linha.trim().match(padrao);
+        if (m) {
+          tituloCapitulo = limparTitulo(m[2] ?? m[1] ?? '');
+          break;
+        }
+      }
+    }
+
+    if (tituloCapitulo !== null) {
       atual = { titulo: tituloCapitulo, linhas: [] };
       capitulos.push(atual);
+    } else if (atual) {
+      atual.linhas.push(linha);
     } else {
-      if (!atual) {
-        atual = { titulo: 'Introdução', linhas: [] };
-        capitulos.push(atual);
-      }
-      atual.linhas.push(bruta);
+      antesDoPrimeiro.push(linha);
     }
+  }
+
+  // Texto entre o nome do plano e o primeiro capítulo: uma frase curta é o
+  // subtítulo da capa; mais que isso vira a introdução.
+  const intro = antesDoPrimeiro.join('\n').trim();
+  let subtitulo = '';
+  if (intro) {
+    const umaFrase = !intro.includes('\n\n') && intro.length <= 280 && !/^[>|#\-*\d]/.test(intro);
+    if (umaFrase && capitulos.length) subtitulo = corrigirTexto(intro.replace(/\*\*/g, ''));
+    else capitulos.unshift({ titulo: 'Introdução', linhas: antesDoPrimeiro });
   }
 
   const chapters = capitulos
@@ -223,14 +268,14 @@ export function documentoDoTexto(bruto: string, nomeCliente: string): ClientStra
       id: novoId('chap'),
       number: '',
       tag: '',
-      title: c.titulo,
+      title: c.titulo || 'Sem título',
       blocos: blocosDoMarkdown(c.linhas.join('\n')),
     }))
     .filter((c) => c.blocos.length || c.title !== 'Introdução');
 
   return {
     title: tituloDoc || nomeCliente,
-    subtitle: '',
+    subtitle: subtitulo,
     cycleMeta: '',
     destaques: [],
     chapters: numerar(chapters),

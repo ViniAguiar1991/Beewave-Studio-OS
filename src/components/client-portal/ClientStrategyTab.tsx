@@ -12,6 +12,8 @@ import {
   novoCapitulo,
   novoId,
   renumerar,
+  rotuloSemNumero,
+  sobretituloDoCapitulo,
 } from './strategy/blocos';
 
 interface ClientStrategyTabProps {
@@ -310,7 +312,7 @@ export const ClientStrategyTab: React.FC<ClientStrategyTabProps> = ({
               data-chapter
               className={i === 0 ? '' : 'mt-20 pt-14 border-t border-slate-200 dark:border-slate-800'}
             >
-              <span className="t-label text-slate-400 dark:text-slate-500">{ch.tag}</span>
+              <span className="t-label text-slate-400 dark:text-slate-500">{sobretituloDoCapitulo(ch)}</span>
               <h2 className="font-display text-[26px] sm:text-[30px] font-semibold tracking-[-0.02em] text-slate-950 dark:text-white leading-tight mt-2">
                 {ch.title}
               </h2>
@@ -462,7 +464,7 @@ const EditorEstrategia: React.FC<{
         {capitulos.map((ch, idx) => {
           const blocos = ch.blocos || [];
           const setBlocos = (lista: typeof blocos) => setCapitulo(ch.id, { blocos: lista });
-          const tagSemNumero = (ch.tag || '').replace(/^\s*\d{1,2}\s*·\s*/, '');
+          const tagSemNumero = rotuloSemNumero(ch.tag);
 
           return (
             <section

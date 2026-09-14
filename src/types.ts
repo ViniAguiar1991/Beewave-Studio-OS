@@ -472,6 +472,8 @@ export interface StrategyBlock {
   legenda?: string;
   itens?: StrategyBlockItem[];
   celulas?: StrategyBlockCell[];
+  /** Marcador da lista: ponto (padrão), ✓ para o que é, ✕ para o que não é. */
+  marcador?: 'ponto' | 'check' | 'x';
   /** Oculto para o cliente; a agência continua vendo, esmaecido. */
   oculto?: boolean;
 }
