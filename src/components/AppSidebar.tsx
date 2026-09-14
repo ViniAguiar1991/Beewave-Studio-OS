@@ -18,6 +18,8 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { useAppStore, useCurrentUser } from '../store';
+import { useStatusNuvem } from '../services/statusNuvem';
+import { isCloudSyncDisabled } from '../services/firestoreSync';
 
 interface AppSidebarProps {
   currentTab: string;
@@ -59,7 +61,44 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   const logout = useAppStore((s) => s.logout);
   const darkMode = useAppStore((s) => s.darkMode);
   const toggleDarkMode = useAppStore((s) => s.toggleDarkMode);
-  const cloudSync = useAppStore((s) => s.cloudSync);
+  const nuvem = useStatusNuvem();
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine));
+  useEffect(() => {
+    const atualizar = () => setOnline(navigator.onLine);
+    window.addEventListener('online', atualizar);
+    window.addEventListener('offline', atualizar);
+    return () => {
+      window.removeEventListener('online', atualizar);
+      window.removeEventListener('offline', atualizar);
+    };
+  }, []);
+
+  /**
+   * O ponto de "Nuvem" era verde fixo. Agora diz a verdade: verde quando tudo
+   * chegou; âmbar quando há alteração esperando há mais de 10 s (sem internet
+   * ou limite diário do Firebase); cinza com a nuvem desligada neste ambiente.
+   */
+  const estadoNuvem = isCloudSyncDisabled()
+    ? { cor: 'bg-slate-300 dark:bg-slate-600', rotulo: '', dica: 'Nuvem desligada neste ambiente' }
+    : !online
+      ? {
+          cor: 'bg-amber-500',
+          rotulo: 'sem internet',
+          dica: 'Sem internet. As alterações ficam guardadas neste computador e sobem quando a conexão voltar.',
+        }
+      : nuvem.cotaEsgotada
+        ? {
+            cor: 'bg-rose-500',
+            rotulo: 'limite diário',
+            dica: 'O Firebase atingiu o limite diário de uso. As alterações ficam guardadas neste computador e sobem sozinhas quando o limite renovar (por volta das 4h).',
+          }
+        : nuvem.atrasado || nuvem.reconectando
+          ? {
+              cor: 'bg-amber-500',
+              rotulo: 'pendente',
+              dica: 'Há alterações que ainda não chegaram à nuvem. Elas ficam guardadas neste computador e sobem sozinhas.',
+            }
+          : { cor: 'bg-emerald-500', rotulo: '', dica: 'Sincronizado com a equipe' };
   const iconDataUrl = useAppStore((s) => s.iconDataUrl);
   const agencyName = useAppStore((s) => s.agencyName);
   const can = useAppStore((s) => s.can);
@@ -161,19 +200,23 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           <li>
             <button
               onClick={onOpenCloudModal}
-              title={compacto ? 'Nuvem' : undefined}
-              aria-label={compacto ? 'Nuvem' : undefined}
+              title={estadoNuvem.dica}
+              aria-label={`Nuvem: ${estadoNuvem.dica}`}
               className={`relative w-full flex items-center rounded-lg t-ui text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer ${
                 compacto ? 'justify-center h-9 px-0' : 'gap-3 px-3 py-2'
               }`}
             >
               <Cloud className="h-[18px] w-[18px] shrink-0" strokeWidth={1.8} />
               {!compacto && <span className="min-w-0 truncate">Nuvem</span>}
+              {!compacto && estadoNuvem.rotulo && (
+                <span className="ml-auto t-meta text-amber-700 dark:text-amber-500 truncate">{estadoNuvem.rotulo}</span>
+              )}
               <span
-                className={`rounded-full shrink-0 ${
-                  cloudSync.connected ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'
-                } ${compacto ? 'absolute top-1.5 right-2 h-1.5 w-1.5' : 'ml-auto h-1.5 w-1.5'}`}
-                title={cloudSync.connected ? 'Sincronizado' : 'Desconectado'}
+                className={`rounded-full shrink-0 ${estadoNuvem.cor} ${
+                  compacto
+                    ? 'absolute top-1.5 right-2 h-1.5 w-1.5'
+                    : `${estadoNuvem.rotulo ? 'ml-1.5' : 'ml-auto'} h-1.5 w-1.5`
+                }`}
               />
             </button>
           </li>

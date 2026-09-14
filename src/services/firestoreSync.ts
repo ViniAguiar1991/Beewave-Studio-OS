@@ -10,10 +10,53 @@ import {
 } from '../firebase';
 import { useAppStore } from '../store';
 import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty, Campaign } from '../types';
-import { uploadTaskFileToCloud, deleteTaskFileFromCloud } from './taskFileCloudSync';
+import { garantirArquivoNaNuvem, deleteTaskFileFromCloud } from './taskFileCloudSync';
+import {
+  fimDeEnvio,
+  inicioDeEnvio,
+  rastrearEnvio,
+  registrarFalhaDaNuvem,
+  registrarNuvemRespondendo,
+} from './statusNuvem';
 
 let isListening = false;
 let isSyncingToCloud = false;
+
+/** Toda gravação passa por aqui para o aviso de "Nuvem" saber o que ainda não chegou. */
+const gravar = (ref: any, dados: any, opcoes?: any): Promise<void> =>
+  rastrearEnvio(opcoes ? setDoc(ref, dados, opcoes) : setDoc(ref, dados));
+const apagar = (ref: any): Promise<void> => rastrearEnvio(deleteDoc(ref));
+
+/**
+ * onSnapshot que volta sozinho.
+ *
+ * Um listener do Firestore que recebe erro morre e não tenta de novo. Uma
+ * queda de rede ou a cota diária derrubavam a escuta de tarefas até alguém
+ * recarregar a página — e a pessoa continuava trabalhando sem receber nada
+ * dos colegas. Agora ele reabre com espera crescente (30 s, 1 min, 2 min…
+ * até 10 min).
+ */
+function escutar(ref: any, nome: string, aoReceber: (snapshot: any) => void) {
+  let tentativa = 0;
+  const abrir = () => {
+    onSnapshot(
+      ref,
+      (snapshot: any) => {
+        tentativa = 0;
+        if (!snapshot.metadata?.fromCache) registrarNuvemRespondendo();
+        aoReceber(snapshot);
+      },
+      (error: any) => {
+        console.warn(`Listener de ${nome} caiu (${error?.code || error?.message}); tentando de novo.`);
+        registrarFalhaDaNuvem(error);
+        const espera = Math.min(30_000 * 2 ** tentativa, 10 * 60_000);
+        tentativa++;
+        setTimeout(abrir, espera);
+      }
+    );
+  };
+  abrir();
+}
 
 /**
  * Trava de desenvolvimento.
@@ -59,11 +102,21 @@ export function initFirestoreSync() {
   if (isListening) return;
   isListening = true;
 
+  // Quem fecha a aba com uma edição agendada não pode perdê-la. A gravação
+  // entra na fila do Firestore no navegador e sobe na próxima abertura, se
+  // não der tempo agora.
+  window.addEventListener('pagehide', enviarTarefasAgendadas);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') enviarTarefasAgendadas();
+  });
+
   try {
     // 1. Listen to Users collection (Colaboradores, Admins, Clientes)
     const usersCol = collection(db, COLLECTIONS.USERS);
-    onSnapshot(usersCol, (snapshot) => {
-      if (snapshot.empty && !isSyncingToCloud) {
+    escutar(usersCol, 'usuários', (snapshot) => {
+      // Vazio vindo do cache não quer dizer vazio na nuvem: semear nessa hora
+      // gravaria a base local por cima da equipe.
+      if (snapshot.empty && !snapshot.metadata.fromCache && !isSyncingToCloud) {
         // If empty on cloud, seed local default users to cloud
         seedInitialUsersToCloud();
         return;
@@ -78,14 +131,12 @@ export function initFirestoreSync() {
       if (users.length > 0) {
         useAppStore.setState({ users });
       }
-    }, (error) => {
-      console.warn('Firestore users listener note:', error.message);
     });
 
     // 2. Listen to Clients collection
     const clientsCol = collection(db, COLLECTIONS.CLIENTS);
-    onSnapshot(clientsCol, (snapshot) => {
-      if (snapshot.empty && !isSyncingToCloud) {
+    escutar(clientsCol, 'clientes', (snapshot) => {
+      if (snapshot.empty && !snapshot.metadata.fromCache && !isSyncingToCloud) {
         // If empty on cloud, seed local default clients to cloud
         seedInitialClientsToCloud();
         return;
@@ -100,8 +151,6 @@ export function initFirestoreSync() {
       if (clients.length > 0) {
         useAppStore.setState({ clients });
       }
-    }, (error) => {
-      console.warn('Firestore clients listener note:', error.message);
     });
 
     // 2b. Campanhas
@@ -111,8 +160,8 @@ export function initFirestoreSync() {
     // a aba Campanhas do portal, o cliente via uma lista que dependia de qual
     // máquina a agência tinha usado.
     const campaignsCol = collection(db, COLLECTIONS.CAMPAIGNS);
-    onSnapshot(campaignsCol, (snapshot) => {
-      if (snapshot.empty) {
+    escutar(campaignsCol, 'campanhas', (snapshot) => {
+      if (snapshot.empty && !snapshot.metadata.fromCache) {
         // Primeira vez com a coleção criada: as campanhas que já existiam
         // neste navegador sobem, senão ficariam presas aqui para sempre —
         // o listener só sabe puxar.
@@ -125,14 +174,12 @@ export function initFirestoreSync() {
         if (raw) campaigns.push({ id: docSnap.id, ...raw } as Campaign);
       });
       if (campaigns.length > 0) useAppStore.setState({ campaigns });
-    }, (error) => {
-      console.warn('Listener de campanhas:', error.message);
     });
 
     // 3. Listen to Tasks collection (Real-time updates between all users)
     const tasksCol = collection(db, COLLECTIONS.TASKS);
-    onSnapshot(tasksCol, (snapshot) => {
-      if (snapshot.empty && !isSyncingToCloud) {
+    escutar(tasksCol, 'tarefas', (snapshot) => {
+      if (snapshot.empty && !snapshot.metadata.fromCache && !isSyncingToCloud) {
         // If empty on cloud, seed local default tasks
         seedInitialTasksToCloud();
         return;
@@ -186,13 +233,11 @@ export function initFirestoreSync() {
         });
         useAppStore.setState({ tasks });
       }
-    }, (error) => {
-      console.warn('Firestore tasks listener note:', error.message);
     });
 
     // 4. Listen to Notes collection
     const notesCol = collection(db, COLLECTIONS.NOTES);
-    onSnapshot(notesCol, (snapshot) => {
+    escutar(notesCol, 'notas', (snapshot) => {
       if (!snapshot.empty) {
         const notes: NoteItem[] = [];
         snapshot.forEach((docSnap) => {
@@ -203,13 +248,11 @@ export function initFirestoreSync() {
         });
         useAppStore.setState({ notes });
       }
-    }, (error) => {
-      console.warn('Firestore notes listener note:', error.message);
     });
 
     // 5. Listen to Admin System Prompts & Global Settings
     const adminPromptsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'adminPrompts');
-    onSnapshot(adminPromptsDocRef, (docSnap) => {
+    escutar(adminPromptsDocRef, 'prompts', (docSnap) => {
       if (docSnap.exists()) {
         const cloudPrompts = docSnap.data() as AdminSystemPrompts;
         if (cloudPrompts && (cloudPrompts.headlinePrompt || cloudPrompts.copyCaptionPrompt)) {
@@ -227,13 +270,11 @@ export function initFirestoreSync() {
           syncAdminPromptsToCloud(currentPrompts);
         }
       }
-    }, (error) => {
-      console.warn('Firestore adminPrompts listener note:', error.message);
     });
 
     // 5a. Mascote compartilhado
     const brandingDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
-    onSnapshot(brandingDocRef, (docSnap) => {
+    escutar(brandingDocRef, 'mascote', (docSnap) => {
       if (!docSnap.exists()) return;
       const dados = docSnap.data() as {
         mascotImages?: string[];
@@ -247,13 +288,11 @@ export function initFirestoreSync() {
       if (Array.isArray(dados?.dashboardPhrases)) {
         useAppStore.setState({ dashboardPhrases: dados.dashboardPhrases });
       }
-    }, (error) => {
-      console.warn('Listener do mascote:', error.message);
     });
 
     // 5b. Visões da Central de Tarefas publicadas para a equipe
     const taskViewsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
-    onSnapshot(taskViewsDocRef, (docSnap) => {
+    escutar(taskViewsDocRef, 'visões', (docSnap) => {
       if (!docSnap.exists()) return;
       const dados = docSnap.data() as {
         taskViews?: TaskView[];
@@ -289,13 +328,11 @@ export function initFirestoreSync() {
           viewsDirty: false,
         };
       });
-    }, (error) => {
-      console.warn('Listener de visões:', error.message);
     });
 
     // 6. Listen to App Configuration (Agency, Categories, Plans, Statuses)
     const agencyConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
-    onSnapshot(agencyConfigDocRef, (docSnap) => {
+    escutar(agencyConfigDocRef, 'configuração', (docSnap) => {
       if (docSnap.exists()) {
         const config = docSnap.data();
         if (config) {
@@ -310,21 +347,17 @@ export function initFirestoreSync() {
           }));
         }
       }
-    }, (error) => {
-      console.warn('Firestore agencyConfig listener note:', error.message);
     });
 
     // 7. Listen to Shared Table View Configuration (Admin custom columns & widths)
     const tableViewConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'tableViewConfig');
-    onSnapshot(tableViewConfigDocRef, (docSnap) => {
+    escutar(tableViewConfigDocRef, 'colunas', (docSnap) => {
       if (docSnap.exists()) {
         const config = docSnap.data() as TableViewConfig;
         if (config && Array.isArray(config.visibleColumnIds)) {
           useAppStore.setState({ tableViewConfig: config });
         }
       }
-    }, (error) => {
-      console.warn('Firestore tableViewConfig listener note:', error.message);
     });
 
     // Update cloud sync status
@@ -353,7 +386,7 @@ export async function syncTableViewConfigToCloud(config: TableViewConfig) {
       ...config,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(configRef, cleanData, { merge: true });
+    await gravar(configRef, cleanData, { merge: true });
     useAppStore.setState({ tableViewConfig: config });
     return true;
   } catch (err) {
@@ -381,7 +414,7 @@ export async function publishTaskViewsToCloud(
   if (isCloudSyncDisabled()) return;
   try {
     const ref = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
-    await setDoc(
+    await gravar(
       ref,
       sanitizeForFirestore({
         taskViews,
@@ -429,7 +462,7 @@ export async function syncMascotToCloud(mascotImages: string[]) {
   }
 
   const ref = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
-  await setDoc(ref, sanitizeForFirestore({ mascotImages }), { merge: true });
+  await gravar(ref, sanitizeForFirestore({ mascotImages }), { merge: true });
 }
 
 /**
@@ -442,7 +475,7 @@ export async function syncMascotToCloud(mascotImages: string[]) {
 export async function syncDashboardPhrasesToCloud(dashboardPhrases: string[]) {
   if (isCloudSyncDisabled()) return;
   const ref = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
-  await setDoc(ref, sanitizeForFirestore({ dashboardPhrases }), { merge: true });
+  await gravar(ref, sanitizeForFirestore({ dashboardPhrases }), { merge: true });
 }
 
 export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {
@@ -454,7 +487,7 @@ export async function syncAdminPromptsToCloud(prompts: AdminSystemPrompts) {
       ...prompts,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(promptsRef, cleanData, { merge: true });
+    await gravar(promptsRef, cleanData, { merge: true });
   } catch (err) {
     console.error('Error saving adminPrompts to Firestore:', err);
   }
@@ -471,7 +504,7 @@ export async function syncAgencyConfigToCloud(config: Record<string, any>) {
       ...config,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(configRef, cleanData, { merge: true });
+    await gravar(configRef, cleanData, { merge: true });
   } catch (err) {
     console.error('Error saving agencyConfig to Firestore:', err);
   }
@@ -489,7 +522,7 @@ export async function syncPromptsConfigToCloud(promptFolders: any[], prompts: an
       prompts,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(configRef, cleanData, { merge: true });
+    await gravar(configRef, cleanData, { merge: true });
   } catch (err) {
     console.error('Error saving prompts to Firestore:', err);
   }
@@ -507,7 +540,7 @@ export async function syncUserToCloud(user: User) {
       ...user,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(userRef, cleanData, { merge: true });
+    await gravar(userRef, cleanData, { merge: true });
   } catch (err) {
     console.error(`Error saving user ${user.id} to Firestore:`, err);
   }
@@ -521,7 +554,7 @@ export async function deleteUserFromCloud(userId: string) {
   if (!userId) return;
   try {
     const userRef = doc(db, COLLECTIONS.USERS, userId);
-    await deleteDoc(userRef);
+    await apagar(userRef);
   } catch (err) {
     console.error(`Error deleting user ${userId} from Firestore:`, err);
   }
@@ -535,7 +568,7 @@ export async function syncCampaignToCloud(campaign: Campaign) {
   if (!campaign.id) return;
   try {
     const ref = doc(db, COLLECTIONS.CAMPAIGNS, campaign.id);
-    await setDoc(ref, sanitizeForFirestore({ ...campaign, updatedAt: new Date().toISOString() }), {
+    await gravar(ref, sanitizeForFirestore({ ...campaign, updatedAt: new Date().toISOString() }), {
       merge: true,
     });
   } catch (err) {
@@ -547,15 +580,66 @@ export async function deleteCampaignFromCloud(campaignId: string) {
   if (isCloudSyncDisabled()) return;
   if (!campaignId) return;
   try {
-    await deleteDoc(doc(db, COLLECTIONS.CAMPAIGNS, campaignId));
+    await apagar(doc(db, COLLECTIONS.CAMPAIGNS, campaignId));
   } catch (err) {
     console.error(`Erro ao excluir a campanha ${campaignId}:`, err);
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Edição em andamento: uma gravação por pausa, não por tecla
+ *
+ * O modal da tarefa salvava a cada letra digitada, e cada gravação ainda
+ * reenviava todas as artes da tarefa em pedaços. Escrever uma legenda numa
+ * tarefa com cinco imagens gastava milhares das 20 mil gravações diárias do
+ * plano gratuito. A cota acabava no meio da tarde e, dali em diante, nada
+ * chegava aos outros usuários.
+ *
+ * Agora a edição fica na tela na hora e vai para a nuvem quando a pessoa para
+ * de digitar (3 s), ao salvar e fechar, ou ao sair da página — o que vier
+ * primeiro. Os colegas recebem em tempo real a partir daí.
+ * ------------------------------------------------------------------------- */
+const agendadas = new Map<string, { tarefa: Task; relogio: ReturnType<typeof setTimeout> }>();
+
+export function agendarEnvioDaTarefa(task: Task, atrasoMs = 3000) {
+  if (isCloudSyncDisabled() || !task.id) return;
+  const anterior = agendadas.get(task.id);
+  if (anterior) clearTimeout(anterior.relogio);
+  else inicioDeEnvio();
+
+  const relogio = setTimeout(() => {
+    const agendada = agendadas.get(task.id);
+    if (!agendada) return;
+    agendadas.delete(task.id);
+    fimDeEnvio();
+    void syncTaskToCloud(agendada.tarefa);
+  }, atrasoMs);
+  agendadas.set(task.id, { tarefa: task, relogio });
+}
+
+/** Envia agora tudo que estava esperando a pausa na digitação. */
+export function enviarTarefasAgendadas() {
+  for (const [id, { tarefa, relogio }] of agendadas) {
+    clearTimeout(relogio);
+    agendadas.delete(id);
+    fimDeEnvio();
+    void syncTaskToCloud(tarefa);
+  }
+}
+
+const cancelarAgendamento = (taskId: string) => {
+  const agendada = agendadas.get(taskId);
+  if (!agendada) return;
+  clearTimeout(agendada.relogio);
+  agendadas.delete(taskId);
+  fimDeEnvio();
+};
+
 export async function syncTaskToCloud(task: Task) {
   if (isCloudSyncDisabled()) return;
   if (!task.id) return;
+  // Esta gravação já leva a versão mais nova; a agendada ficou para trás.
+  cancelarAgendamento(task.id);
   try {
     const taskRef = doc(db, COLLECTIONS.TASKS, task.id);
 
@@ -563,8 +647,8 @@ export async function syncTaskToCloud(task: Task) {
     // and strip large dataUrl from the main document to ensure it stays well under the 1MB Firestore limit
     const sanitizedFiles = (task.files || []).map((file) => {
       if (file.dataUrl && file.dataUrl.length > 50) {
-        // Upload uncompressed file payload in background
-        uploadTaskFileToCloud(task.id, file).catch((err) =>
+        // Só sobe se a nuvem ainda não tiver essa arte inteira.
+        garantirArquivoNaNuvem(task.id, file).catch((err) =>
           console.warn(`Background chunk upload error for ${file.name}:`, err)
         );
       }
@@ -582,7 +666,7 @@ export async function syncTaskToCloud(task: Task) {
 
     const sanitizedBriefingFiles = (task.briefingFiles || []).map((file) => {
       if (file.dataUrl && file.dataUrl.length > 50) {
-        uploadTaskFileToCloud(task.id, file).catch((err) =>
+        garantirArquivoNaNuvem(task.id, file).catch((err) =>
           console.warn(`Background chunk upload error for briefing file ${file.name}:`, err)
         );
       }
@@ -603,7 +687,7 @@ export async function syncTaskToCloud(task: Task) {
       briefingFiles: sanitizedBriefingFiles,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(taskRef, cleanData, { merge: true });
+    await gravar(taskRef, cleanData, { merge: true });
   } catch (err) {
     console.error(`Error saving task ${task.id} to Firestore:`, err);
   }
@@ -617,7 +701,7 @@ export async function syncTaskLiveEditingToCloud(taskId: string, editingBy: Task
   if (!taskId) return;
   try {
     const taskRef = doc(db, COLLECTIONS.TASKS, taskId);
-    await setDoc(
+    await gravar(
       taskRef,
       {
         editingBy: editingBy ? sanitizeForFirestore(editingBy) : null,
@@ -643,7 +727,7 @@ export async function deleteTaskFromCloud(taskId: string) {
       });
     }
     const taskRef = doc(db, COLLECTIONS.TASKS, taskId);
-    await deleteDoc(taskRef);
+    await apagar(taskRef);
   } catch (err) {
     console.error(`Error deleting task ${taskId} from Firestore:`, err);
   }
@@ -661,7 +745,7 @@ export async function syncClientToCloud(client: Client) {
       ...client,
       updatedAt: new Date().toISOString(),
     });
-    await setDoc(clientRef, cleanData, { merge: true });
+    await gravar(clientRef, cleanData, { merge: true });
   } catch (err) {
     console.error(`Error saving client ${client.id} to Firestore:`, err);
   }
@@ -675,7 +759,7 @@ export async function deleteClientFromCloud(clientId: string) {
   if (!clientId) return;
   try {
     const clientRef = doc(db, COLLECTIONS.CLIENTS, clientId);
-    await deleteDoc(clientRef);
+    await apagar(clientRef);
   } catch (err) {
     console.error(`Error deleting client ${clientId} from Firestore:`, err);
   }
@@ -692,35 +776,35 @@ export async function pushFullStoreToCloud(): Promise<boolean> {
     // 1. Sync Users
     for (const user of state.users) {
       const ref = doc(db, COLLECTIONS.USERS, user.id);
-      await setDoc(ref, sanitizeForFirestore(user), { merge: true });
+      await gravar(ref, sanitizeForFirestore(user), { merge: true });
     }
 
     // 2. Sync Clients
     for (const client of state.clients) {
       const ref = doc(db, COLLECTIONS.CLIENTS, client.id);
-      await setDoc(ref, sanitizeForFirestore(client), { merge: true });
+      await gravar(ref, sanitizeForFirestore(client), { merge: true });
     }
 
     // 3. Sync Tasks
     for (const task of state.tasks) {
       const ref = doc(db, COLLECTIONS.TASKS, task.id);
-      await setDoc(ref, sanitizeForFirestore(task), { merge: true });
+      await gravar(ref, sanitizeForFirestore(task), { merge: true });
     }
 
     // 4. Sync Notes
     for (const note of state.notes) {
       const ref = doc(db, COLLECTIONS.NOTES, note.id);
-      await setDoc(ref, sanitizeForFirestore(note), { merge: true });
+      await gravar(ref, sanitizeForFirestore(note), { merge: true });
     }
 
     // 5. Sync Admin Prompts & Agency Settings
     if (state.adminPrompts) {
       const promptsRef = doc(db, COLLECTIONS.APP_CONFIG, 'adminPrompts');
-      await setDoc(promptsRef, sanitizeForFirestore(state.adminPrompts), { merge: true });
+      await gravar(promptsRef, sanitizeForFirestore(state.adminPrompts), { merge: true });
     }
 
     const agencyRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
-    await setDoc(
+    await gravar(
       agencyRef,
       sanitizeForFirestore({
         agencyName: state.agencyName,
@@ -760,7 +844,7 @@ async function seedInitialUsersToCloud() {
   try {
     for (const user of state.users) {
       const ref = doc(db, COLLECTIONS.USERS, user.id);
-      await setDoc(ref, sanitizeForFirestore(user), { merge: true });
+      await gravar(ref, sanitizeForFirestore(user), { merge: true });
     }
   } catch (err) {
     console.error('Error seeding users:', err);
@@ -777,7 +861,7 @@ async function seedInitialClientsToCloud() {
   try {
     for (const client of state.clients) {
       const ref = doc(db, COLLECTIONS.CLIENTS, client.id);
-      await setDoc(ref, sanitizeForFirestore(client), { merge: true });
+      await gravar(ref, sanitizeForFirestore(client), { merge: true });
     }
   } catch (err) {
     console.error('Error seeding clients:', err);
@@ -794,7 +878,7 @@ async function seedInitialCampaignsToCloud() {
   try {
     for (const campaign of state.campaigns) {
       const ref = doc(db, COLLECTIONS.CAMPAIGNS, campaign.id);
-      await setDoc(ref, sanitizeForFirestore(campaign), { merge: true });
+      await gravar(ref, sanitizeForFirestore(campaign), { merge: true });
     }
   } catch (err) {
     console.error('Erro ao semear campanhas:', err);
@@ -811,7 +895,7 @@ async function seedInitialTasksToCloud() {
   try {
     for (const task of state.tasks) {
       const ref = doc(db, COLLECTIONS.TASKS, task.id);
-      await setDoc(ref, sanitizeForFirestore(task), { merge: true });
+      await gravar(ref, sanitizeForFirestore(task), { merge: true });
     }
   } catch (err) {
     console.error('Error seeding tasks:', err);

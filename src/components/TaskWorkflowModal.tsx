@@ -174,9 +174,16 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  /** Houve edição desde que o modal abriu (ou desde o último salvar). */
+  const alterouRef = useRef(false);
+
   // Flush save on unmount / close
   const flushSave = useCallback(() => {
     if (!task) return;
+    // Abrir e fechar sem mexer em nada não grava: cada gravação chega a todos
+    // os usuários conectados e conta na cota diária do Firestore.
+    if (!alterouRef.current) return;
+    alterouRef.current = false;
     const current = draftRef.current;
     updateTask(task.id, {
       title: current.title,
@@ -195,11 +202,13 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
     });
   }, [task?.id, updateTask]);
 
-  // Auto-save helper on every change with immediate store update
+  // A mudança aparece na hora nesta tela e na lista; a nuvem recebe quando a
+  // pessoa para de digitar ou fecha o modal (ver agendarEnvioDaTarefa).
   const handleFieldChange = (field: string, value: any) => {
     setHasAlteredAfterApproval(true);
     if (!task) return;
-    updateTask(task.id, { [field]: value });
+    alterouRef.current = true;
+    updateTask(task.id, { [field]: value }, { adiarNuvem: true });
   };
 
   // Safe close that flushes changes

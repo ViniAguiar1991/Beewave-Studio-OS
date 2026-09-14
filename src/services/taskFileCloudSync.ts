@@ -8,6 +8,7 @@ import {
 import { TaskFile } from '../types';
 import { saveFileToLocalDb, getFileFromLocalDb, deleteFileFromLocalDb } from '../utils/fileStorageDb';
 import { isCloudSyncDisabled } from './firestoreSync';
+import { rastrearEnvio } from './statusNuvem';
 
 const CHUNK_SIZE = 550000; // ~550KB per chunk, well below Firestore's 1MB limit
 
@@ -39,7 +40,7 @@ const COLLECTIONS = {
  * quando a cota de escrita estourava no meio, ficava um cabeçalho apontando
  * para pedaços que nunca chegaram — 19 artes ficaram assim.
  */
-export async function uploadTaskFileToCloud(taskId: string, file: TaskFile): Promise<void> {
+async function enviarArquivo(taskId: string, file: TaskFile): Promise<void> {
   if (!file || !file.id) return;
 
   if (file.dataUrl && file.dataUrl.startsWith('data:')) {
@@ -59,51 +60,116 @@ export async function uploadTaskFileToCloud(taskId: string, file: TaskFile): Pro
 
     for (let i = 0; i < totalChunks; i++) {
       const chunkRef = doc(db, COLLECTIONS.TASK_FILE_CHUNKS, `${file.id}_${i}`);
-      await setDoc(chunkRef, {
-        fileId: file.id,
-        taskId,
-        chunkIndex: i,
-        totalChunks,
-        data: dataUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE),
-        updatedAt: new Date().toISOString(),
-      });
+      await rastrearEnvio(
+        setDoc(chunkRef, {
+          fileId: file.id,
+          taskId,
+          chunkIndex: i,
+          totalChunks,
+          data: dataUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE),
+          updatedAt: new Date().toISOString(),
+        })
+      );
     }
 
     const fileHeaderRef = doc(db, COLLECTIONS.TASK_FILES, file.id);
-    await setDoc(
-      fileHeaderRef,
-      {
-        fileId: file.id,
-        taskId,
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        totalChunks,
-        totalChars: dataUrl.length,
-        hasPayload: true,
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
+    await rastrearEnvio(
+      setDoc(
+        fileHeaderRef,
+        {
+          fileId: file.id,
+          taskId,
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          totalChunks,
+          totalChars: dataUrl.length,
+          hasPayload: true,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      )
     );
     nuvemConfirmada.add(file.id);
   } else if (file.url && !isCloudSyncDisabled()) {
     // Link externo (Drive, Figma): só o cabeçalho.
     const fileHeaderRef = doc(db, COLLECTIONS.TASK_FILES, file.id);
-    await setDoc(
-      fileHeaderRef,
-      {
-        fileId: file.id,
-        taskId,
-        name: file.name,
-        type: file.type || 'link',
-        url: file.url,
-        hasPayload: false,
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
+    await rastrearEnvio(
+      setDoc(
+        fileHeaderRef,
+        {
+          fileId: file.id,
+          taskId,
+          name: file.name,
+          type: file.type || 'link',
+          url: file.url,
+          hasPayload: false,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      )
     );
   }
 }
+
+/** Envios em andamento, para a mesma arte não subir duas vezes ao mesmo tempo. */
+const enviando = new Map<string, Promise<void>>();
+
+/**
+ * Garante que a arte está inteira na nuvem, subindo só se faltar.
+ *
+ * Antes toda gravação da tarefa — cada letra digitada no modal — subia de
+ * novo todas as artes, pedaço por pedaço. Agora a primeira vez na sessão
+ * confere o cabeçalho e o último pedaço (duas leituras, que custam bem menos
+ * que gravações) e só sobe o que não estiver lá. Depois disso, nada.
+ */
+export function garantirArquivoNaNuvem(taskId: string | undefined, file: TaskFile): Promise<void> {
+  if (!file?.id) return Promise.resolve();
+  if (nuvemConfirmada.has(file.id)) return Promise.resolve();
+  const emCurso = enviando.get(file.id);
+  if (emCurso) return emCurso;
+
+  const tarefa = (async () => {
+    let idDaTarefa = taskId;
+    const temConteudo = !!file.dataUrl && file.dataUrl.startsWith('data:');
+
+    if (temConteudo && !isCloudSyncDisabled()) {
+      try {
+        const header = await getDoc(doc(db, COLLECTIONS.TASK_FILES, file.id));
+        const h = header.exists() ? header.data() : null;
+        idDaTarefa = idDaTarefa || h?.taskId;
+        if (h?.hasPayload && (!h.totalChars || h.totalChars === file.dataUrl!.length)) {
+          const ultimo = await getDoc(
+            doc(db, COLLECTIONS.TASK_FILE_CHUNKS, `${file.id}_${(h.totalChunks || 1) - 1}`)
+          );
+          if (ultimo.exists()) {
+            nuvemConfirmada.add(file.id);
+            await saveFileToLocalDb(file.id, file.dataUrl!, {
+              name: file.name,
+              type: file.type,
+              size: file.size,
+              taskId: idDaTarefa,
+            });
+            return;
+          }
+        }
+      } catch {
+        // Sem conseguir conferir, sobe: melhor gastar gravação que perder arte.
+      }
+    }
+
+    if (!idDaTarefa) return;
+    await enviarArquivo(idDaTarefa, file);
+    nuvemConfirmada.add(file.id);
+  })().finally(() => enviando.delete(file.id));
+
+  enviando.set(file.id, tarefa);
+  return tarefa;
+}
+
+/** Nome antigo, usado pelo upload do modal. Passa pela mesma conferência. */
+export const uploadTaskFileToCloud = (taskId: string, file: TaskFile) =>
+  garantirArquivoNaNuvem(taskId, file);
 
 /** Arquivos cuja cópia na nuvem já foi conferida nesta sessão. */
 const nuvemConfirmada = new Set<string>();
@@ -156,26 +222,10 @@ async function baixarDaNuvem(file: TaskFile): Promise<string | null> {
  * e em segundo plano: quem abriu a tela não espera por isso.
  */
 async function repararNuvem(file: TaskFile, dataUrl: string, taskId?: string) {
-  if (isCloudSyncDisabled() || nuvemConfirmada.has(file.id)) return;
-  nuvemConfirmada.add(file.id);
-
+  if (isCloudSyncDisabled()) return;
   try {
-    const header = await getDoc(doc(db, COLLECTIONS.TASK_FILES, file.id));
-    const total = header.exists() ? header.data().totalChunks || 1 : 0;
-    const ultimo = total
-      ? await getDoc(doc(db, COLLECTIONS.TASK_FILE_CHUNKS, `${file.id}_${total - 1}`))
-      : null;
-
-    const completa = !!ultimo?.exists();
-    if (completa) return;
-
-    const idDaTarefa = taskId || (header.exists() ? header.data().taskId : '');
-    if (!idDaTarefa) return;
-
-    await uploadTaskFileToCloud(idDaTarefa, { ...file, dataUrl });
+    await garantirArquivoNaNuvem(taskId, { ...file, dataUrl });
   } catch (err) {
-    // Se falhar (cota de novo), libera para tentar na próxima sessão.
-    nuvemConfirmada.delete(file.id);
     console.warn(`Não foi possível reparar ${file.name} na nuvem:`, err);
   }
 }
@@ -230,10 +280,19 @@ export async function deleteTaskFileFromCloud(fileId: string, totalChunksEstimat
   if (isCloudSyncDisabled()) return;
 
   try {
-    await deleteDoc(doc(db, COLLECTIONS.TASK_FILES, fileId));
+    // Apagava 20 pedaços às cegas — 21 gravações por arte, mesmo quando ela
+    // tinha 1 pedaço. O cabeçalho diz quantos existem.
+    let total = totalChunksEstimated;
+    try {
+      const header = await getDoc(doc(db, COLLECTIONS.TASK_FILES, fileId));
+      if (header.exists()) total = header.data().hasPayload ? header.data().totalChunks || 1 : 0;
+    } catch {
+      /* sem cabeçalho legível, fica a estimativa */
+    }
+    await rastrearEnvio(deleteDoc(doc(db, COLLECTIONS.TASK_FILES, fileId)));
     await Promise.all(
-      Array.from({ length: totalChunksEstimated }, (_, i) =>
-        deleteDoc(doc(db, COLLECTIONS.TASK_FILE_CHUNKS, `${fileId}_${i}`)).catch(() => {})
+      Array.from({ length: total }, (_, i) =>
+        rastrearEnvio(deleteDoc(doc(db, COLLECTIONS.TASK_FILE_CHUNKS, `${fileId}_${i}`))).catch(() => {})
       )
     );
   } catch (err) {

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   syncTaskToCloud,
+  agendarEnvioDaTarefa,
   syncTaskLiveEditingToCloud,
   deleteTaskFromCloud,
   syncClientToCloud,
@@ -1169,7 +1170,12 @@ interface BeeWaveState {
    */
   undoStack: { taskId: string; before: Partial<Task>; label: string }[];
   undoLast: () => string | null;
-  updateTask: (id: string, data: Partial<Task>) => void;
+  /**
+   * `adiarNuvem`: aplica na tela na hora e manda para a nuvem quando a pessoa
+   * para de digitar. Para campos de texto do modal — sem isso cada tecla era
+   * uma gravação no Firestore.
+   */
+  updateTask: (id: string, data: Partial<Task>, opcoes?: { adiarNuvem?: boolean }) => void;
   deleteTask: (id: string) => void;
   setTaskStatus: (id: string, status: any) => void;
   setTaskWorkflowStep: (id: string, step: WorkflowStep) => void;
@@ -2010,7 +2016,7 @@ export const useAppStore = create<BeeWaveState>()(
         syncTaskToCloud(duplicated);
         return duplicated;
       },
-      updateTask: (id, data) => {
+      updateTask: (id, data, opcoes) => {
         registrarDesfazer(get, set, id, data, 'edição');
         let updated: Task | undefined;
         set((state) => {
@@ -2060,7 +2066,10 @@ export const useAppStore = create<BeeWaveState>()(
           });
           return { tasks: nextTasks };
         });
-        if (updated) syncTaskToCloud(updated);
+        if (updated) {
+          if (opcoes?.adiarNuvem) agendarEnvioDaTarefa(updated);
+          else syncTaskToCloud(updated);
+        }
       },
       deleteTask: (id) => {
         const taskToDelete = get().tasks.find((t) => t.id === id);
