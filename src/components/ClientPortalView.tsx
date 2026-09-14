@@ -40,7 +40,7 @@ const VALID_TABS: PortalTabKey[] = [
  * própria tela. Antes, tudo vivia aqui — 1.700 linhas com três linguagens
  * visuais concorrentes e a mesma pauta renderizada quatro vezes.
  *
- * A navegação é literal e curta: Resumo, Aprovações, Estratégia, Calendário,
+ * A navegação é literal e curta: Resumo, Planejamento, Aprovações, Estratégia,
  * Arquivos. Resultados só aparece quando existe relatório. Nenhuma aba executa
  * uma ação — abas levam a lugares, botões executam.
  */
@@ -286,9 +286,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   }
 
   // Resultados e Campanhas somem quando a última fonte delas é removida.
-  const abaSemConteudo =
-    (activeTab === 'resultados' && reports.length === 0) ||
-    (activeTab === 'campanhas' && clientCampaigns.length === 0);
+  const abaSemConteudo = activeTab === 'resultados' && reports.length === 0;
   const effectiveTab: PortalTabKey = abaSemConteudo ? 'resumo' : activeTab;
 
   return (
@@ -307,7 +305,6 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
         onLogout={() => (onLogout ? onLogout() : logout())}
         pendingCount={pending.length}
         hasReports={reports.length > 0}
-        hasCampaigns={clientCampaigns.length > 0}
         statusLine={statusLine}
       />
 

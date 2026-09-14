@@ -20,13 +20,35 @@ const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const toDayKey = (d: Date) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+type FiltroPlanejamento = 'todas' | 'producao' | 'publicadas';
+
+const FILTROS: { key: FiltroPlanejamento; label: string }[] = [
+  { key: 'todas', label: 'Todas' },
+  { key: 'producao', label: 'Em produção' },
+  { key: 'publicadas', label: 'Publicadas' },
+];
+
 /**
- * Calendário — quando sai o quê.
+ * "Em produção" é tudo que ainda não foi ao ar — inclusive o que espera a
+ * aprovação do cliente e o que já foi aprovado mas não publicado. Assim os
+ * dois filtros dividem "Todas" sem sobra nem sobreposição: cada pauta cai
+ * em exatamente um deles.
+ */
+const passaNoFiltro = (t: Task, filtro: FiltroPlanejamento) => {
+  if (filtro === 'todas') return true;
+  const publicada = getPortalState(t.status).key === 'publicado';
+  return filtro === 'publicadas' ? publicada : !publicada;
+};
+
+/**
+ * Planejamento — quando sai o quê.
  *
- * Esta aba deliberadamente NÃO aprova nada. Antes, o antigo "Planejamento"
- * repetia a fila de aprovação com outro visual e outro botão, e a mesma pauta
- * aparecia três vezes na mesma tela. Aqui o calendário responde uma pergunta
- * só — a data — e manda quem precisa decidir para Aprovações.
+ * Esta aba deliberadamente NÃO aprova nada. Ela responde uma pergunta só —
+ * a data — e manda quem precisa decidir para Aprovações.
+ *
+ * Abre em lista: a leitura de cima para baixo, com a data por extenso, é o
+ * que o cliente usa para conferir a semana. A grade do mês continua a um
+ * clique para quem quer enxergar a distribuição.
  */
 export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
   tasks,
@@ -34,15 +56,18 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
   onSuggest,
 }) => {
   const [cursor, setCursor] = useState(() => new Date());
-  const [view, setView] = useState<'mes' | 'lista'>('mes');
+  const [view, setView] = useState<'mes' | 'lista'>('lista');
+  const [filtro, setFiltro] = useState<FiltroPlanejamento>('todas');
 
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const todayKey = toDayKey(new Date());
 
+  const filtradas = useMemo(() => tasks.filter((t) => passaNoFiltro(t, filtro)), [tasks, filtro]);
+
   const byDay = useMemo(() => {
     const map = new Map<string, Task[]>();
-    for (const t of tasks) {
+    for (const t of filtradas) {
       const day = getPostDay(t);
       if (!day) continue;
       const list = map.get(day) || [];
@@ -50,9 +75,9 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
       map.set(day, list);
     }
     return map;
-  }, [tasks]);
+  }, [filtradas]);
 
-  const undated = useMemo(() => tasks.filter((t) => !getPostDay(t)), [tasks]);
+  const undated = useMemo(() => filtradas.filter((t) => !getPostDay(t)), [filtradas]);
 
   const cells = useMemo(() => {
     const firstWeekday = new Date(year, month, 1).getDay();
@@ -66,13 +91,13 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
 
   const monthTasks = useMemo(
     () =>
-      tasks
+      filtradas
         .filter((t) => {
           const day = getPostDay(t);
           return !!day && day.startsWith(`${year}-${String(month + 1).padStart(2, '0')}`);
         })
         .sort(byPostDate),
-    [tasks, year, month]
+    [filtradas, year, month]
   );
 
   return (
@@ -110,7 +135,7 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
 
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3 t-meta">
-            {(['mes', 'lista'] as const).map((v) => (
+            {(['lista', 'mes'] as const).map((v) => (
               <button
                 key={v}
                 onClick={() => setView(v)}
@@ -130,6 +155,28 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
             Sugerir pauta
           </Button>
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap -mt-3" role="group" aria-label="Filtrar publicações">
+        {FILTROS.map((f) => {
+          const ativo = filtro === f.key;
+          const quantos = tasks.filter((t) => passaNoFiltro(t, f.key)).length;
+          return (
+            <button
+              key={f.key}
+              onClick={() => setFiltro(f.key)}
+              aria-pressed={ativo}
+              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full t-ui transition-colors cursor-pointer ${
+                ativo
+                  ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950'
+                  : 'border border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-slate-900 dark:hover:border-white'
+              }`}
+            >
+              {f.label}
+              <span className={`tabular-nums ${ativo ? 'opacity-70' : 'text-slate-400'}`}>{quantos}</span>
+            </button>
+          );
+        })}
       </div>
 
       {view === 'mes' ? (
@@ -201,8 +248,18 @@ export const ClientCalendarTab: React.FC<ClientCalendarTabProps> = ({
         <div>
           {monthTasks.length === 0 ? (
             <EmptyState
-              title={`Nenhuma publicação programada para ${MONTHS[month].toLowerCase()}`}
-              hint="Use as setas para ver outros meses, ou envie uma sugestão de pauta para a equipe."
+              title={
+                filtro === 'publicadas'
+                  ? `Nada publicado em ${MONTHS[month].toLowerCase()}`
+                  : filtro === 'producao'
+                    ? `Nada em produção para ${MONTHS[month].toLowerCase()}`
+                    : `Nenhuma publicação programada para ${MONTHS[month].toLowerCase()}`
+              }
+              hint={
+                filtro === 'todas'
+                  ? 'Use as setas para ver outros meses, ou envie uma sugestão de pauta para a equipe.'
+                  : 'Troque o filtro para "Todas" ou use as setas para ver outros meses.'
+              }
             />
           ) : (
             <ul className="divide-y divide-slate-200 dark:divide-slate-800">

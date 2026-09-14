@@ -25,7 +25,7 @@ const periodo = (c: Campaign) => {
 /**
  * Campanhas — o que a marca tem em andamento, agrupado.
  *
- * O cliente já vê as publicações soltas em Aprovações e no Calendário. Aqui
+ * O cliente já vê as publicações soltas em Aprovações e no Planejamento. Aqui
  * elas aparecem reunidas pelo motivo que as criou: "15 anos da Perfetto" são
  * dez pautas que só fazem sentido juntas, e é assim que o cliente pensa
  * quando pergunta "como está a campanha de aniversário?".

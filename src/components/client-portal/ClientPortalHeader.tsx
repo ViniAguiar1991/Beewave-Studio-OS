@@ -30,8 +30,6 @@ interface ClientPortalHeaderProps {
   pendingCount: number;
   /** A aba Resultados só existe quando há relatório para ler. */
   hasReports: boolean;
-  /** Idem Campanhas: sem campanha montada, a aba não aparece vazia. */
-  hasCampaigns: boolean;
   /** Frase única de situação, calculada pelo Resumo. */
   statusLine: string;
 }
@@ -58,17 +56,23 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
   onLogout,
   pendingCount,
   hasReports,
-  hasCampaigns,
   statusLine,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
 
+  // Planejamento vem logo depois do Resumo: é a pergunta mais frequente do
+  // cliente ("o que sai esta semana?"). A chave interna segue 'calendario'
+  // para não perder a aba salva de quem já usava o portal.
+  //
+  // Campanhas aparece sempre. Escondida quando vazia, ela sumia e reaparecia
+  // conforme a agência cadastrava, e parecia defeito — melhor mostrar a aba
+  // com um estado vazio que explica.
   const tabs: PortalTab[] = [
     { key: 'resumo', label: 'Resumo' },
+    { key: 'calendario', label: 'Planejamento' },
     { key: 'aprovacoes', label: 'Aprovações', badge: pendingCount },
     { key: 'estrategia', label: 'Estratégia' },
-    ...(hasCampaigns ? [{ key: 'campanhas' as PortalTabKey, label: 'Campanhas' }] : []),
-    { key: 'calendario', label: 'Calendário' },
+    { key: 'campanhas', label: 'Campanhas' },
     { key: 'arquivos', label: 'Arquivos' },
     ...(hasReports ? [{ key: 'resultados' as PortalTabKey, label: 'Resultados' }] : []),
   ];

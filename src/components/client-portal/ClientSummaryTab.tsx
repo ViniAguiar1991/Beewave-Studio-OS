@@ -184,7 +184,7 @@ export const ClientSummaryTab: React.FC<ClientSummaryTabProps> = ({
                 onClick={onOpenCalendar}
                 className="t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
               >
-                Ver calendário
+                Ver planejamento
               </button>
             ) : undefined
           }
@@ -193,7 +193,7 @@ export const ClientSummaryTab: React.FC<ClientSummaryTabProps> = ({
         {!nextPost ? (
           <EmptyState
             title="Nenhuma publicação agendada"
-            hint="Quando a Beewave programar as próximas pautas, as datas aparecem aqui e no calendário."
+            hint="Quando a Beewave programar as próximas pautas, as datas aparecem aqui e no planejamento."
           />
         ) : (
           /* Empilha no celular: a régua vertical só faz sentido lado a lado. */
