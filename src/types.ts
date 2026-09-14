@@ -171,6 +171,13 @@ export interface Client {
   recommendedWords?: string | string[];
   forbiddenWords?: string | string[];
   monthlyReports?: MonthlyReport[];
+  /** Personalização do portal deste cliente, feita pela agência. */
+  portalConfig?: {
+    /** Ordem das abas. Aba ausente da lista vai para o fim, na ordem padrão. */
+    tabOrder?: string[];
+    /** Abas escondidas do cliente. */
+    hiddenTabs?: string[];
+  };
   files?: ClientFile[];
   strategyDocument?: ClientStrategyDocument;
   portalEmail?: string;
@@ -414,6 +421,67 @@ export interface StrategySwot {
   threats: string[];
 }
 
+
+/* ----------------------------------------------------------------------------
+ * Estratégia em blocos
+ *
+ * O capítulo virou uma lista ordenada de blocos, cada um com um estilo. Antes
+ * ele tinha doze estruturas fixas (SWOT, KPIs, jornada, portfólio…) moldadas
+ * num documento só, com o visual de cada uma cravado no código: não dava para
+ * escolher o que aparece, criar campo novo nem trocar o estilo de um trecho.
+ *
+ * Os campos antigos continuam no tipo para ler documentos já importados; eles
+ * são convertidos em blocos na primeira abertura e salvos assim ao editar.
+ * -------------------------------------------------------------------------- */
+export type StrategyBlockType =
+  | 'subtitulo'
+  | 'texto'
+  | 'destaque'
+  | 'alerta'
+  | 'lista'
+  | 'etapas'
+  | 'itens'
+  | 'quadro';
+
+export interface StrategyBlockItem {
+  id: string;
+  titulo?: string;
+  texto?: string;
+  /** Valor à direita: meta, prioridade, etiqueta. */
+  valor?: string;
+  /** Linha pequena de apoio: frequência, pontos de contato. */
+  detalhe?: string;
+}
+
+export type StrategyBlockCor = 'neutro' | 'verde' | 'vermelho' | 'azul' | 'ambar';
+
+export interface StrategyBlockCell {
+  id: string;
+  titulo: string;
+  cor?: StrategyBlockCor;
+  itens: string[];
+}
+
+export interface StrategyBlock {
+  id: string;
+  tipo: StrategyBlockType;
+  /** Rótulo pequeno acima do bloco. */
+  titulo?: string;
+  texto?: string;
+  /** Legenda do destaque ou linha forte do alerta. */
+  legenda?: string;
+  itens?: StrategyBlockItem[];
+  celulas?: StrategyBlockCell[];
+  /** Oculto para o cliente; a agência continua vendo, esmaecido. */
+  oculto?: boolean;
+}
+
+export interface StrategyCoverHighlight {
+  id: string;
+  rotulo: string;
+  texto: string;
+}
+
 export interface StrategyChapter {
   id: string;
   number: string; // e.g. "01", "02", ... "10"
@@ -432,6 +500,9 @@ export interface StrategyChapter {
   quarterPlan?: StrategyQuarterPlan[];
   responsibilities?: StrategyResponsibilityItem[];
   glossary?: StrategyGlossaryItem[];
+  /** Conteúdo editável do capítulo. Quando existe, substitui os campos acima. */
+  blocos?: StrategyBlock[];
+  oculto?: boolean;
 }
 
 export interface ClientStrategyDocument {
@@ -447,6 +518,8 @@ export interface ClientStrategyDocument {
     cyclePriority: string;
   };
   chapters?: StrategyChapter[];
+  /** Destaques da capa, editáveis. Substituem keyDecisions quando existem. */
+  destaques?: StrategyCoverHighlight[];
   rawText?: string;
   updatedAt?: string;
   [key: string]: any;

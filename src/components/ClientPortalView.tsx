@@ -49,6 +49,7 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   const clientRequestChange = useAppStore((s) => s.clientRequestChange);
   const clientRequestMultipleChanges = useAppStore((s) => s.clientRequestMultipleChanges);
   const updateClientStrategy = useAppStore((s) => s.updateClientStrategy);
+  const updateClient = useAppStore((s) => s.updateClient);
   const logout = useAppStore((s) => s.logout);
 
   /* ---------------------------------------------------------------------
@@ -261,8 +262,24 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
   }
 
   // Resultados e Campanhas somem quando a última fonte delas é removida.
-  const abaSemConteudo = activeTab === 'resultados' && reports.length === 0;
-  const effectiveTab: PortalTabKey = abaSemConteudo ? 'resumo' : activeTab;
+  // Aba escondida pela agência não abre para o cliente, nem por aba salva.
+  const abaOculta =
+    isClientLocked && (client.portalConfig?.hiddenTabs || []).includes(activeTab);
+  const abaSemConteudo = (activeTab === 'resultados' && reports.length === 0) || abaOculta;
+  // Cai na primeira aba que o cliente pode ver — não fixo no Resumo, que a
+  // agência também pode ter escondido.
+  const ordemPadrao: PortalTabKey[] = ['resumo', 'calendario', 'aprovacoes', 'estrategia', 'campanhas', 'arquivos'];
+  const ocultasDoCliente = isClientLocked ? client.portalConfig?.hiddenTabs || [] : [];
+  const ordemSalva = client.portalConfig?.tabOrder || [];
+  const primeiraVisivel =
+    [...ordemPadrao]
+      .sort((a, b) => {
+        const ia = ordemSalva.indexOf(a);
+        const ib = ordemSalva.indexOf(b);
+        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+      })
+      .find((k) => !ocultasDoCliente.includes(k)) || 'resumo';
+  const effectiveTab: PortalTabKey = abaSemConteudo ? primeiraVisivel : activeTab;
 
   return (
     <div data-surface="portal" className="min-h-screen pb-24">
@@ -281,6 +298,9 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
         pendingCount={pending.length}
         hasReports={reports.length > 0}
         statusLine={statusLine}
+        onSavePortalConfig={
+          isClientLocked ? undefined : (portalConfig) => updateClient(client.id, { portalConfig })
+        }
       />
 
       <main className="mx-auto max-w-6xl px-5 sm:px-8 py-10">

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Client } from '../../types';
-import { ChevronLeft, LogOut, Link2, Check } from 'lucide-react';
+import { ChevronLeft, LogOut, Link2, Check, GripVertical, Eye, EyeOff, SlidersHorizontal } from 'lucide-react';
 
 export type PortalTabKey =
   | 'resumo'
@@ -32,6 +32,8 @@ interface ClientPortalHeaderProps {
   hasReports: boolean;
   /** Frase única de situação, calculada pelo Resumo. */
   statusLine: string;
+  /** Salva a ordem e as abas ocultas deste cliente. Só existe na visão da agência. */
+  onSavePortalConfig?: (config: { tabOrder: string[]; hiddenTabs: string[] }) => void;
 }
 
 /**
@@ -57,17 +59,20 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
   pendingCount,
   hasReports,
   statusLine,
+  onSavePortalConfig,
 }) => {
   const [copiedLink, setCopiedLink] = useState(false);
+  const [personalizando, setPersonalizando] = useState(false);
+  const [arrastando, setArrastando] = useState<string | null>(null);
+  const [sobre, setSobre] = useState<string | null>(null);
 
-  // Planejamento vem logo depois do Resumo: é a pergunta mais frequente do
-  // cliente ("o que sai esta semana?"). A chave interna segue 'calendario'
-  // para não perder a aba salva de quem já usava o portal.
+  // Planejamento vem logo depois do Resumo por padrão: é a pergunta mais
+  // frequente do cliente ("o que sai esta semana?"). A chave interna segue
+  // 'calendario' para não perder a aba salva de quem já usava o portal.
   //
   // Campanhas aparece sempre. Escondida quando vazia, ela sumia e reaparecia
-  // conforme a agência cadastrava, e parecia defeito — melhor mostrar a aba
-  // com um estado vazio que explica.
-  const tabs: PortalTab[] = [
+  // conforme a agência cadastrava, e parecia defeito.
+  const padrao: PortalTab[] = [
     { key: 'resumo', label: 'Resumo' },
     { key: 'calendario', label: 'Planejamento' },
     { key: 'aprovacoes', label: 'Aprovações', badge: pendingCount },
@@ -76,6 +81,47 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
     { key: 'arquivos', label: 'Arquivos' },
     ...(hasReports ? [{ key: 'resultados' as PortalTabKey, label: 'Resultados' }] : []),
   ];
+
+  /**
+   * A agência escolhe a ordem e quais abas o cliente vê, por cliente. Aba
+   * nova (que ainda não estava na ordem salva) entra no fim, na posição
+   * padrão — assim criar uma aba no futuro não some com ela de ninguém.
+   */
+  const ordemSalva = client?.portalConfig?.tabOrder || [];
+  const ocultas = client?.portalConfig?.hiddenTabs || [];
+  const ordenadas = [...padrao].sort((a, b) => {
+    const ia = ordemSalva.indexOf(a.key);
+    const ib = ordemSalva.indexOf(b.key);
+    if (ia === -1 && ib === -1) return padrao.indexOf(a) - padrao.indexOf(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  const tabs = personalizando ? ordenadas : ordenadas.filter((t) => !ocultas.includes(t.key));
+
+  const salvarConfig = (tabOrder: string[], hiddenTabs: string[]) =>
+    onSavePortalConfig?.({ tabOrder, hiddenTabs });
+
+  const soltarEm = (alvo: string) => {
+    if (!arrastando || arrastando === alvo) return;
+    const chaves = ordenadas.map((t) => t.key as string);
+    const de = chaves.indexOf(arrastando);
+    const para = chaves.indexOf(alvo);
+    chaves.splice(de, 1);
+    chaves.splice(para, 0, arrastando);
+    salvarConfig(chaves, ocultas);
+  };
+
+  const alternarOculta = (key: string) => {
+    const visiveis = ordenadas.filter((t) => !ocultas.includes(t.key));
+    const vaiOcultar = !ocultas.includes(key);
+    // Pelo menos uma aba fica visível, senão o portal abre em branco.
+    if (vaiOcultar && visiveis.length <= 1) return;
+    salvarConfig(
+      ordenadas.map((t) => t.key as string),
+      vaiOcultar ? [...ocultas, key] : ocultas.filter((k) => k !== key)
+    );
+  };
 
   const handleCopyPortalLink = async () => {
     try {
@@ -125,6 +171,21 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
             </label>
           )}
 
+          {!isClientLocked && onSavePortalConfig && (
+            <button
+              onClick={() => setPersonalizando((v) => !v)}
+              aria-pressed={personalizando}
+              className={`inline-flex items-center gap-1.5 t-ui transition-colors cursor-pointer ${
+                personalizando
+                  ? 'text-amber-700 dark:text-amber-400 font-medium'
+                  : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+              }`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{personalizando ? 'Concluir' : 'Personalizar menu'}</span>
+            </button>
+          )}
+
           <button
             onClick={handleCopyPortalLink}
             className="inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
@@ -166,16 +227,56 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
         </div>
       </div>
 
-      {/* Navegação. Uma aba leva a um lugar — nenhuma aba executa uma ação. */}
+      {/* Navegação. Uma aba leva a um lugar — nenhuma aba executa uma ação.
+          No modo personalizar (só a agência vê), as abas se arrastam para os
+          lados e o olho esconde ou mostra cada uma para este cliente. */}
+      {personalizando && (
+        <div className="mx-auto max-w-6xl px-5 sm:px-8 pb-3">
+          <p className="t-meta text-amber-800 dark:text-amber-300">
+            Arraste as abas para mudar a ordem. O olho mostra ou esconde a aba para {client?.company || 'este cliente'}. Salva na hora.
+          </p>
+        </div>
+      )}
       <nav
         className="mx-auto max-w-6xl px-5 sm:px-8 flex items-center gap-7 overflow-x-auto no-scrollbar"
         aria-label="Seções do portal"
       >
         {tabs.map((tab) => {
           const isActive = activeTab === tab.key;
+          const oculta = ocultas.includes(tab.key);
+          const alvoDoArraste = personalizando && sobre === tab.key && arrastando !== tab.key;
           return (
-            <button
+            <span
               key={tab.key}
+              draggable={personalizando}
+              onDragStart={(e) => {
+                setArrastando(tab.key);
+                e.dataTransfer.effectAllowed = 'move';
+              }}
+              onDragOver={(e) => {
+                if (!personalizando) return;
+                e.preventDefault();
+                setSobre(tab.key);
+              }}
+              onDragLeave={() => setSobre((s) => (s === tab.key ? null : s))}
+              onDrop={(e) => {
+                e.preventDefault();
+                soltarEm(tab.key);
+                setArrastando(null);
+                setSobre(null);
+              }}
+              onDragEnd={() => {
+                setArrastando(null);
+                setSobre(null);
+              }}
+              className={`relative flex items-center gap-1.5 ${
+                personalizando ? 'cursor-grab active:cursor-grabbing' : ''
+              } ${arrastando === tab.key ? 'opacity-40' : ''} ${
+                alvoDoArraste ? 'before:absolute before:-left-3.5 before:top-0 before:bottom-3 before:w-0.5 before:bg-amber-500' : ''
+              }`}
+            >
+            {personalizando && <GripVertical className="h-3.5 w-3.5 text-slate-400 shrink-0" aria-hidden="true" />}
+            <button
               id={`tab-portal-${tab.key}`}
               onClick={() => onSelectTab(tab.key)}
               aria-current={isActive ? 'page' : undefined}
@@ -183,7 +284,7 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
                 isActive
                   ? 'border-slate-950 dark:border-white text-slate-950 dark:text-white font-semibold'
                   : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-              }`}
+              } ${oculta ? 'line-through opacity-50' : ''}`}
             >
               {tab.label}
               {!!tab.badge && tab.badge > 0 && (
@@ -198,6 +299,18 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
                 </span>
               )}
             </button>
+            {personalizando && (
+              <button
+                type="button"
+                onClick={() => alternarOculta(tab.key)}
+                aria-label={oculta ? `Mostrar ${tab.label} para o cliente` : `Esconder ${tab.label} do cliente`}
+                title={oculta ? 'Mostrar para o cliente' : 'Esconder do cliente'}
+                className="grid h-6 w-6 -mb-3 place-items-center rounded text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer"
+              >
+                {oculta ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            </span>
           );
         })}
       </nav>
