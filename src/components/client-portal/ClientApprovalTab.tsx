@@ -1,9 +1,10 @@
+import { ArteDaTarefa, PostArte, ehArteExibivel } from '../ArteDaTarefa';
 import React, { useState } from 'react';
 import { Check, MessageSquare, Copy, Maximize2 } from 'lucide-react';
 import { Task, Client } from '../../types';
 import { formatLongDate, formatTimestamp } from '../../utils/dateFormatter';
 import { getPostDay, byPostDate, describeActivity } from './portalStatus';
-import { Button, EmptyState, PostImage, PostListSkeleton, StatusPill } from '../ui';
+import { Button, EmptyState, PostListSkeleton, StatusPill } from '../ui';
 
 type ApprovalFilter = 'aguardando' | 'ajuste' | 'aprovados' | 'todas';
 
@@ -133,9 +134,11 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
       ) : (
         <div className="divide-y divide-slate-200 dark:divide-slate-800">
           {visible.map((task) => {
-            const files = (task.files || []).filter((f) => f.dataUrl || f.url);
+            // Filtrar por `dataUrl` escondia a arte que tinha perdido a cópia
+            // da memória — o cliente via "ainda não enviada" numa peça pronta.
+            const files = (task.files || []).filter(ehArteExibivel);
             const slideIdx = slideByTask[task.id] || 0;
-            const activeImg = files[slideIdx]?.dataUrl || files[slideIdx]?.url || files[0]?.dataUrl || files[0]?.url;
+            const activeFile = files[slideIdx] || files[0];
             const isAwaiting = task.status === 'em_aprovacao';
             const postDay = getPostDay(task);
 
@@ -154,7 +157,7 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
                     aria-label={`Ampliar arte de ${task.title}`}
                     className="relative block w-full aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group cursor-pointer"
                   >
-                    <PostImage src={activeImg} alt={task.title} className="h-full w-full" />
+                    <PostArte file={activeFile} taskId={task.id} alt={task.title} className="h-full w-full" />
                     <span className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/25 transition-colors duration-150 grid place-items-center">
                       <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 inline-flex items-center gap-1.5 t-meta font-medium text-white">
                         <Maximize2 className="h-3.5 w-3.5" />
@@ -176,9 +179,10 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
                               : 'border-slate-200 dark:border-slate-800 opacity-55 hover:opacity-100'
                           }`}
                         >
-                          <img
-                            src={f.dataUrl || f.url}
-                            alt=""
+                          <ArteDaTarefa
+                            file={f}
+                            taskId={task.id}
+                            compacta
                             className="h-full w-full object-cover"
                           />
                         </button>

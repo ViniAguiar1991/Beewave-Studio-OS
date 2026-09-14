@@ -1350,6 +1350,48 @@ function registrarDesfazer(
   }));
 }
 
+
+/**
+ * Tira o conteúdo das artes antes de gravar no localStorage.
+ *
+ * O localStorage tem ~5 MB para o app inteiro. Com as artes em base64 dentro
+ * das tarefas, ele estourava; o plano B apagava toda imagem acima de 150 KB,
+ * e na recarga seguinte a arte aparecia vazia — era a "imagem corrompida"
+ * depois de cada atualização. Pior: estourar derrubava a gravação do estado
+ * inteiro, não só das imagens.
+ *
+ * A arte não precisa estar aqui. Ela mora no IndexedDB (que comporta centenas
+ * de MB) e no Firestore, e o componente ArteDaTarefa busca de lá. Arte
+ * pequena, que cabe no próprio documento da tarefa na nuvem, fica.
+ */
+const TETO_ARTE_NO_ARMAZENAMENTO = 30000;
+
+function semArtesPesadas(valor: string): string {
+  if (valor.length < 400000) return valor;
+  try {
+    const parsed = JSON.parse(valor);
+    const tarefas = parsed?.state?.tasks;
+    if (!Array.isArray(tarefas)) return valor;
+    parsed.state.tasks = tarefas.map((t: any) =>
+      !t?.files?.length
+        ? t
+        : {
+            ...t,
+            files: t.files.map((f: any) =>
+              typeof f?.dataUrl === 'string' &&
+              f.dataUrl.startsWith('data:') &&
+              f.dataUrl.length > TETO_ARTE_NO_ARMAZENAMENTO
+                ? { ...f, dataUrl: '' }
+                : f
+            ),
+          }
+    );
+    return JSON.stringify(parsed);
+  } catch {
+    return valor;
+  }
+}
+
 export const useAppStore = create<BeeWaveState>()(
   persist(
     (set, get) => ({
@@ -2991,7 +3033,7 @@ export const useAppStore = create<BeeWaveState>()(
         setItem: (name: string, value: string): void => {
           if (typeof window === 'undefined') return;
           try {
-            window.localStorage.setItem(name, value);
+            window.localStorage.setItem(name, semArtesPesadas(value));
           } catch (e) {
             console.warn('LocalStorage quota or write error, trimming oversized image caches:', e);
             try {

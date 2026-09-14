@@ -1,3 +1,4 @@
+import { PostArte, ehArteExibivel } from '../ArteDaTarefa';
 import React from 'react';
 import { ArrowRight, Lightbulb } from 'lucide-react';
 import { Client, Task } from '../../types';
@@ -9,7 +10,7 @@ import {
   byPostDate,
   describeActivity,
 } from './portalStatus';
-import { Button, BlockHeader, EmptyState, PostImage, StatusPill } from '../ui';
+import { Button, BlockHeader, EmptyState, StatusPill } from '../ui';
 
 interface ClientSummaryTabProps {
   client: Client;
@@ -100,8 +101,9 @@ export const ClientSummaryTab: React.FC<ClientSummaryTabProps> = ({
                   onClick={() => onOpenTask(task)}
                   className="w-full flex items-center gap-4 py-4 text-left group cursor-pointer"
                 >
-                  <PostImage
-                    src={task.files?.[0]?.dataUrl || task.files?.[0]?.url}
+                  <PostArte
+                    file={(task.files || []).find(ehArteExibivel)}
+                    taskId={task.id}
                     alt=""
                     className="h-14 w-14 shrink-0 rounded-lg border border-slate-200 dark:border-slate-800"
                   />

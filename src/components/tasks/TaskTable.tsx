@@ -1,3 +1,4 @@
+import { ArteDaTarefa, ehArteExibivel } from '../ArteDaTarefa';
 import React, { useRef, useState } from 'react';
 import { Paperclip, Check, Copy, Trash2, GripVertical } from 'lucide-react';
 import { Task, TaskView, CustomProperty } from '../../types';
@@ -291,23 +292,39 @@ const Cell: React.FC<{
       return <span className="text-slate-800 dark:text-slate-200">{client.company}</span>;
     }
 
-    case 'title':
+    case 'title': {
+      // Campanha em cinza pequeno sob o título: diz a que conjunto a pauta
+      // pertence sem ocupar uma coluna só para isso.
+      const campanha = task.campaignId
+        ? ctx.campaigns.find((c) => c.id === task.campaignId)
+        : undefined;
       return (
-        <span className="block font-medium text-slate-900 dark:text-white group-hover:underline underline-offset-4 decoration-slate-300">
-          {task.selectedHeadline || task.headline || task.title}
+        <span className="block">
+          <span className="block font-medium text-slate-900 dark:text-white group-hover:underline underline-offset-4 decoration-slate-300">
+            {task.selectedHeadline || task.headline || task.title}
+          </span>
+          {campanha && (
+            <span className="block text-[12.5px] leading-snug text-slate-400 dark:text-slate-500 mt-0.5">
+              {campanha.title}
+            </span>
+          )}
         </span>
       );
+    }
 
     case 'attachments': {
       const arquivos = task.files || [];
-      const primeiro = arquivos.find((f) => f.dataUrl || f.url);
+      // Antes a busca exigia `dataUrl` preenchido — que some do armazenamento
+      // local — e a miniatura virava clipe mesmo com a arte inteira na nuvem.
+      const primeiro = arquivos.find(ehArteExibivel);
       if (arquivos.length === 0) return <Muted>—</Muted>;
       return (
         <span className="inline-flex items-center gap-1.5">
           {primeiro ? (
-            <img
-              src={primeiro.dataUrl || primeiro.url}
-              alt=""
+            <ArteDaTarefa
+              file={primeiro}
+              taskId={task.id}
+              compacta
               className="h-9 w-9 rounded object-cover border border-slate-200 dark:border-slate-700"
             />
           ) : (

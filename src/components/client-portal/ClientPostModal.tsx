@@ -1,9 +1,10 @@
+import { ArteDaTarefa, PostArte, ehArteExibivel } from '../ArteDaTarefa';
 import React, { useEffect, useState } from 'react';
 import { X, Check, MessageSquare, Copy, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import { Task, Client } from '../../types';
 import { formatLongDate, formatTimestamp } from '../../utils/dateFormatter';
 import { describeActivity } from './portalStatus';
-import { Button, PostImage, StatusPill } from '../ui';
+import { Button, StatusPill } from '../ui';
 
 interface ClientPostModalProps {
   task: Task | null;
@@ -34,7 +35,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const files = (task?.files || []).filter((f) => f.dataUrl || f.url);
+  const files = (task?.files || []).filter(ehArteExibivel);
 
   useEffect(() => {
     setSlideIdx(0);
@@ -61,7 +62,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
 
   const isAwaiting = task.status === 'em_aprovacao';
   const clientName = client.company || client.name || 'Cliente';
-  const activeImg = files[slideIdx]?.dataUrl || files[slideIdx]?.url;
+  const activeFile = files[slideIdx];
 
   /** Itens já na lista mais o que estiver sendo digitado agora. */
   const pendingCount = changes.length + (draft.trim() ? 1 : 0);
@@ -125,8 +126,9 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
           {/* Arte */}
           <div className="lg:col-span-7 bg-slate-50 dark:bg-[#0a0b0d] p-5 sm:p-7 lg:border-r border-slate-200 dark:border-slate-800">
             <div className="relative">
-              <PostImage
-                src={activeImg}
+              <PostArte
+                file={activeFile}
+                taskId={task.id}
                 alt={task.title}
                 className="w-full aspect-square rounded-xl border border-slate-200 dark:border-slate-800"
               />
@@ -161,7 +163,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
                         : 'border-slate-200 dark:border-slate-800 opacity-55 hover:opacity-100'
                     }`}
                   >
-                    <img src={f.dataUrl || f.url} alt="" className="h-full w-full object-cover" />
+                    <ArteDaTarefa file={f} taskId={task.id} compacta className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>

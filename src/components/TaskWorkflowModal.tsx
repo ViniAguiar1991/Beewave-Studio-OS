@@ -16,7 +16,8 @@ import {
   Maximize2,
 } from 'lucide-react';
 import { useAppStore } from '../store';
-import { uploadTaskFileToCloud } from '../services/taskFileCloudSync';
+import { uploadTaskFileToCloud, loadTaskFileDataUrl } from '../services/taskFileCloudSync';
+import { ArteDaTarefa, ehArteExibivel } from './ArteDaTarefa';
 import { Task, TaskFile, FunnelStage } from '../types';
 
 interface TaskWorkflowModalProps {
@@ -247,8 +248,13 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   }, [previewMediaUrl, showDeleteConfirm, isAssigneeDropdownOpen, handleCloseModal]);
 
   // Download single file helper
-  const downloadSingleFile = (file: { id?: string; name: string; url?: string; dataUrl?: string }) => {
-    const fileUrl = file.dataUrl || file.url;
+  const downloadSingleFile = async (file: { id?: string; name: string; url?: string; dataUrl?: string; type?: string; size?: number }) => {
+    // A cópia da memória pode ter sumido; a arte segue no IndexedDB e na nuvem.
+    const recuperada =
+      file.id && !(file.dataUrl || '').startsWith('data:')
+        ? await loadTaskFileDataUrl(file as any, task?.id)
+        : null;
+    const fileUrl = recuperada || file.dataUrl || file.url;
     if (!fileUrl) return;
     const filename = file.name || 'arte';
     const link = document.createElement('a');
@@ -280,10 +286,19 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
     }
   };
 
+  const abrirPreview = async (file: any) => {
+    setPreviewMediaName(file.name);
+    const url =
+      (file.dataUrl || '').startsWith('data:')
+        ? file.dataUrl
+        : (await loadTaskFileDataUrl(file, task?.id)) || file.url || null;
+    setPreviewMediaUrl(url);
+  };
+
   // Download all files individually without zipping
   const handleDownloadAllFiles = () => {
     if (!files || files.length === 0) return;
-    const downloadableFiles = files.filter((f) => f.dataUrl || f.url);
+    const downloadableFiles = files.filter((f) => f.id || f.url);
     if (downloadableFiles.length === 0) return;
 
     downloadableFiles.forEach((file, index) => {
@@ -965,14 +980,12 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                     <div
                       key={file.id}
                       className="group relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 aspect-square flex flex-col justify-end transition-colors hover:border-slate-400 dark:hover:border-slate-600 cursor-pointer"
-                      onClick={() => {
-                        setPreviewMediaUrl(file.dataUrl || file.url || null);
-                        setPreviewMediaName(file.name);
-                      }}
+                      onClick={() => abrirPreview(file)}
                     >
-                      {file.dataUrl || file.url ? (
-                        <img
-                          src={file.dataUrl || file.url}
+                      {ehArteExibivel(file) ? (
+                        <ArteDaTarefa
+                          file={file}
+                          taskId={task?.id}
                           alt={file.name}
                           className="w-full h-full object-cover absolute inset-0"
                         />
@@ -1009,8 +1022,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            setPreviewMediaUrl(file.dataUrl || file.url || null);
-                            setPreviewMediaName(file.name);
+                            abrirPreview(file);
                           }}
                           className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-900 transition-transform hover:scale-110"
                           title="Ampliar imagem"

@@ -246,7 +246,11 @@ export const PostImage: React.FC<{
   src?: string | null;
   alt: string;
   className?: string;
-}> = ({ src, alt, className = '' }) => {
+  /** A arte existe e está sendo buscada — não é "ainda não enviada". */
+  carregando?: boolean;
+  /** A tarefa tem arte, mas ela não foi encontrada em lugar nenhum. */
+  indisponivel?: boolean;
+}> = ({ src, alt, className = '', carregando = false, indisponivel = false }) => {
   const imgRef = React.useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
@@ -266,12 +270,22 @@ export const PostImage: React.FC<{
     if (el?.complete && el.naturalWidth > 0) setLoaded(true);
   }, [src]);
 
+  if (!src && carregando) {
+    return (
+      <div className={`relative overflow-hidden bg-slate-100 dark:bg-slate-900 ${className}`}>
+        <Shimmer className="absolute inset-0 rounded-none" />
+      </div>
+    );
+  }
+
   if (!src) {
     return (
       <div
         className={`grid place-items-center bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-600 ${className}`}
       >
-        <span className="t-meta">Arte ainda não enviada</span>
+        <span className="t-meta px-2 text-center">
+          {indisponivel ? 'Arte indisponível' : 'Arte ainda não enviada'}
+        </span>
       </div>
     );
   }
