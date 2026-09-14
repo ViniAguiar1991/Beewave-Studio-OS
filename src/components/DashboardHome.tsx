@@ -23,6 +23,9 @@ import {
   fraseDoDia,
   mascoteDoDia,
   DiaDaSemana,
+  ETAPAS,
+  EtapaTarefa,
+  ResumoCliente,
 } from '../lib/weekPlan';
 import { Button, BlockHeader, EmptyState } from './ui';
 
@@ -34,6 +37,22 @@ interface DashboardHomeProps {
 }
 
 const getDay = (t: Task) => (t.postDate || t.date || '').split('T')[0] || null;
+
+/** Mesma cor para a etapa no gráfico, na barra e na tabela. */
+const COR_ETAPA: Record<EtapaTarefa, string> = {
+  naoIniciadas: 'bg-slate-300 dark:bg-slate-600',
+  emAndamento: 'bg-slate-500 dark:bg-slate-400',
+  aguardandoAprovacao: 'bg-sky-400',
+  aprovadas: 'bg-emerald-300 dark:bg-emerald-700',
+  postadas: 'bg-emerald-600 dark:bg-emerald-400',
+};
+const COR_FALTA_PLANEJAR = 'bg-amber-400';
+
+const DESTAQUE_ETAPA: Partial<Record<EtapaTarefa, 'sky' | 'emerald'>> = {
+  aguardandoAprovacao: 'sky',
+  aprovadas: 'emerald',
+  postadas: 'emerald',
+};
 
 /**
  * Início — o retrato da semana.
@@ -69,8 +88,8 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
   const mascote = useMemo(() => mascoteDoDia(mascotImages), [mascotImages]);
   const frase = useMemo(() => fraseDoDia(dashboardPhrases), [dashboardPhrases]);
 
-  const semana = useMemo(() => resumoDaSemana(clients, tasks), [clients, tasks]);
-  const carga = useMemo(() => cargaPorDia(tasks), [tasks]);
+  const semana = useMemo(() => resumoDaSemana(clients, tasks, statuses), [clients, tasks, statuses]);
+  const carga = useMemo(() => cargaPorDia(tasks, statuses), [tasks, statuses]);
 
   /** A fila da equipe: o que está parado esperando alguém da Beewave. */
   const fila = useMemo(() => {
@@ -89,9 +108,16 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
     setNewNoteText('');
   };
 
-  const clientesComPendencia = semana.clientes
-    .filter((c) => c.faltaPlanejar > 0)
-    .sort((a, b) => b.faltaPlanejar - a.faltaPlanejar);
+  /** Clientes com recorrência ou com tarefa na semana. Quem mais precisa de atenção vem primeiro. */
+  const clientesDaSemana = semana.clientes
+    .filter((c) => c.contratado > 0 || c.planejado > 0)
+    .sort(
+      (a, b) =>
+        b.faltaPlanejar - a.faltaPlanejar ||
+        b.naoIniciadas + b.emAndamento + b.aguardandoAprovacao -
+          (a.naoIniciadas + a.emAndamento + a.aguardandoAprovacao) ||
+        a.nome.localeCompare(b.nome, 'pt-BR')
+    );
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 pb-16">
@@ -170,69 +196,37 @@ export const DashboardHome: React.FC<DashboardHomeProps> = ({
         {semana.semContratos ? (
           <SemContrato onConfigure={() => onSelectTab('clientes')} />
         ) : semana.tudoEmDia ? (
-          <TudoEmDia total={semana.concluido} />
+          <TudoEmDia total={semana.aprovadas + semana.postadas} />
         ) : (
           <>
             <BarraDaSemana semana={semana} />
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5 pt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-5 pt-1">
               <Metrica
                 valor={semana.faltaPlanejar}
                 rotulo="Falta planejar"
-                detalhe="contratado e ainda sem pauta"
+                detalhe="na recorrência, sem tarefa"
                 destaque={semana.faltaPlanejar > 0 ? 'amber' : undefined}
               />
-              <Metrica valor={semana.emProducao} rotulo="Em produção" detalhe="com a equipe" />
-              <Metrica
-                valor={semana.comCliente}
-                rotulo="Com o cliente"
-                detalhe="aguardando aprovação"
-                destaque={semana.comCliente > 0 ? 'sky' : undefined}
-              />
-              <Metrica
-                valor={semana.concluido}
-                rotulo="Concluídas"
-                detalhe="aprovadas ou no ar"
-                destaque={semana.concluido > 0 ? 'emerald' : undefined}
-              />
+              {ETAPAS.map((e) => (
+                <Metrica
+                  key={e.key}
+                  valor={semana[e.key]}
+                  rotulo={e.rotulo}
+                  detalhe={e.detalhe}
+                  destaque={semana[e.key] > 0 ? DESTAQUE_ETAPA[e.key] : undefined}
+                />
+              ))}
             </div>
           </>
         )}
       </section>
 
       {/* ---------------------------------------------------------------
-          Onde falta planejar
+          Semana por cliente
          --------------------------------------------------------------- */}
-      {clientesComPendencia.length > 0 && (
-        <section className="rounded-2xl border border-amber-300 dark:border-amber-900/70 bg-amber-50/60 dark:bg-amber-950/20 p-6 sm:p-7 space-y-4">
-          <div className="flex items-center gap-2">
-            <CalendarClock className="h-4 w-4 text-amber-700 dark:text-amber-500" />
-            <h2 className="t-label text-amber-800 dark:text-amber-400">Falta planejar esta semana</h2>
-          </div>
-
-          <ul className="space-y-2.5">
-            {clientesComPendencia.map((c) => (
-              <li key={c.clientId}>
-                <button
-                  onClick={() => onSelectClient(c.clientId)}
-                  className="w-full flex items-center gap-3 text-left group cursor-pointer"
-                >
-                  <span className="t-lead font-medium text-slate-900 dark:text-white group-hover:underline underline-offset-4">
-                    {c.nome}
-                  </span>
-                  <span className="t-body text-slate-600 dark:text-slate-400">
-                    {c.faltaPlanejar === 1
-                      ? 'falta 1 publicação'
-                      : `faltam ${c.faltaPlanejar} publicações`}
-                  </span>
-                  <span className="ml-auto t-meta text-slate-500 dark:text-slate-400 tabular-nums shrink-0">
-                    {c.planejado} de {c.contratado}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {clientesDaSemana.length > 0 && (
+        <SemanaPorCliente clientes={clientesDaSemana} onSelectClient={onSelectClient} />
       )}
 
       {/* ---------------------------------------------------------------
@@ -416,11 +410,10 @@ const GraficoDaSemana: React.FC<{ dias: DiaDaSemana[] }> = ({ dias }) => {
 
           <div className="relative flex items-end gap-2 sm:gap-4" style={{ height: ALTURA }}>
             {dias.map((dia) => {
-              const faixas = [
-                { valor: dia.emProducao, cor: 'bg-slate-300 dark:bg-slate-600' },
-                { valor: dia.comCliente, cor: 'bg-sky-400' },
-                { valor: dia.concluido, cor: 'bg-emerald-500' },
-              ].filter((f) => f.valor > 0);
+              // De baixo para cima, na ordem em que a publicação caminha.
+              const faixas = ETAPAS.map((e) => ({ valor: dia[e.key], cor: COR_ETAPA[e.key] })).filter(
+                (f) => f.valor > 0
+              );
 
               return (
                 <div
@@ -468,9 +461,9 @@ const GraficoDaSemana: React.FC<{ dias: DiaDaSemana[] }> = ({ dias }) => {
       </div>
 
       <div className="flex items-center gap-4 flex-wrap mt-5 pt-4 border-t border-slate-100 dark:border-slate-800">
-        <Legenda cor="bg-emerald-500" texto="Concluídas" />
-        <Legenda cor="bg-sky-400" texto="Com o cliente" />
-        <Legenda cor="bg-slate-300 dark:bg-slate-600" texto="Em produção" />
+        {ETAPAS.map((e) => (
+          <Legenda key={e.key} cor={COR_ETAPA[e.key]} texto={e.rotulo} />
+        ))}
       </div>
     </div>
   );
@@ -484,27 +477,27 @@ const Legenda: React.FC<{ cor: string; texto: string }> = ({ cor, texto }) => (
 );
 
 /**
- * Barra segmentada da semana. Cada faixa é um estágio, na ordem em que a
- * pauta caminha: falta planejar → produção → cliente → concluída.
+ * Barra segmentada da semana. Cada faixa é uma etapa, da mais adiantada à
+ * que nem começou: postadas → aprovadas → aprovação → andamento → não
+ * iniciadas → falta planejar.
  */
 const BarraDaSemana: React.FC<{ semana: ReturnType<typeof resumoDaSemana> }> = ({ semana }) => {
-  const total = Math.max(semana.contratado, semana.planejado, 1);
+  // Tarefas lançadas mais as que faltam lançar. Cliente com mais tarefas que
+  // a recorrência não pode estourar a barra de quem tem menos.
+  const total = semana.planejado + semana.faltaPlanejar;
   const faixas = [
-    { valor: semana.concluido, cor: 'bg-emerald-500', nome: 'Concluídas' },
-    { valor: semana.comCliente, cor: 'bg-sky-500', nome: 'Com o cliente' },
-    { valor: semana.emProducao, cor: 'bg-slate-400 dark:bg-slate-500', nome: 'Em produção' },
-    { valor: semana.faltaPlanejar, cor: 'bg-amber-400', nome: 'Falta planejar' },
+    ...[...ETAPAS].reverse().map((e) => ({ valor: semana[e.key], cor: COR_ETAPA[e.key], nome: e.rotulo })),
+    { valor: semana.faltaPlanejar, cor: COR_FALTA_PLANEJAR, nome: 'Falta planejar' },
   ].filter((f) => f.valor > 0);
+  const prontas = semana.aprovadas + semana.postadas;
 
   return (
     <div className="space-y-2.5">
       <p className="t-body text-slate-700 dark:text-slate-300">
         <strong className="font-semibold text-slate-950 dark:text-white tabular-nums">
-          {semana.concluido} de {Math.max(semana.contratado, semana.planejado)}
+          {prontas} de {total}
         </strong>{' '}
-        {semana.contratado > 0
-          ? 'publicações contratadas já estão aprovadas'
-          : 'publicações programadas já estão aprovadas'}
+        publicações da semana já aprovadas ou postadas
       </p>
 
       <div
@@ -516,7 +509,7 @@ const BarraDaSemana: React.FC<{ semana: ReturnType<typeof resumoDaSemana> }> = (
           <span
             key={f.nome}
             className={`${f.cor} transition-all duration-300`}
-            style={{ width: `${(f.valor / total) * 100}%` }}
+            style={{ width: `${(f.valor / Math.max(total, 1)) * 100}%` }}
             title={`${f.nome}: ${f.valor}`}
           />
         ))}
@@ -550,6 +543,99 @@ const Metrica: React.FC<{
   );
 };
 
+/**
+ * A semana de cada cliente numa linha: quanto a recorrência pede, quanto já
+ * virou tarefa e em que etapa cada tarefa está.
+ */
+const SemanaPorCliente: React.FC<{
+  clientes: ResumoCliente[];
+  onSelectClient: (id: string) => void;
+}> = ({ clientes, onSelectClient }) => {
+  const colunas: { key: 'faltaPlanejar' | EtapaTarefa; rotulo: string; cor: string }[] = [
+    { key: 'faltaPlanejar', rotulo: 'Falta planejar', cor: COR_FALTA_PLANEJAR },
+    ...ETAPAS.map((e) => ({ key: e.key, rotulo: e.rotulo, cor: COR_ETAPA[e.key] })),
+  ];
+
+  return (
+    <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-6 sm:p-7 space-y-2">
+      <BlockHeader
+        title="Semana por cliente"
+        count={`${clientes.length} ${clientes.length === 1 ? 'cliente' : 'clientes'}`}
+      />
+
+      <div className="overflow-x-auto -mx-6 sm:-mx-7 px-6 sm:px-7">
+        <table className="w-full min-w-[860px] border-collapse">
+          <thead>
+            <tr className="border-b border-slate-200 dark:border-slate-800">
+              <th className="w-[220px] py-3 pr-4 text-left t-meta font-medium text-slate-500 dark:text-slate-400">
+                Cliente
+              </th>
+              {colunas.map((c) => (
+                <th
+                  key={c.key}
+                  className="py-3 px-2 text-right t-meta font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap"
+                >
+                  <span className="inline-flex items-center gap-1.5">
+                    <span className={`h-2 w-2 rounded-sm ${c.cor}`} aria-hidden="true" />
+                    {c.rotulo}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70">
+            {clientes.map((c) => (
+              <tr
+                key={c.clientId}
+                onClick={() => onSelectClient(c.clientId)}
+                className="group cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+              >
+                <td className="py-3 pr-4">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectClient(c.clientId);
+                    }}
+                    className="block text-left t-ui font-medium text-slate-900 dark:text-white whitespace-nowrap group-hover:underline underline-offset-4 cursor-pointer"
+                  >
+                    {c.nome}
+                  </button>
+                  <span className="block t-meta text-slate-500 dark:text-slate-400 tabular-nums whitespace-nowrap mt-0.5">
+                    {c.contratado > 0
+                      ? `${c.planejado} de ${c.contratado} ${c.contratado === 1 ? 'lançada' : 'lançadas'}`
+                      : `${c.planejado} ${c.planejado === 1 ? 'tarefa' : 'tarefas'} · sem recorrência`}
+                  </span>
+                </td>
+                {colunas.map((col) => {
+                  const valor = c[col.key];
+                  const alerta = col.key === 'faltaPlanejar' && valor > 0;
+                  return (
+                    <td key={col.key} className="py-3 px-2 text-right tabular-nums">
+                      {valor === 0 ? (
+                        <span className="t-ui text-slate-300 dark:text-slate-700">–</span>
+                      ) : (
+                        <span
+                          className={`t-ui ${
+                            alerta
+                              ? 'font-semibold text-amber-700 dark:text-amber-500'
+                              : 'font-medium text-slate-900 dark:text-white'
+                          }`}
+                        >
+                          {valor}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+};
+
 const TudoEmDia: React.FC<{ total: number }> = ({ total }) => (
   <div className="flex items-center gap-4 py-3">
     <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400">
@@ -574,11 +660,11 @@ const TudoEmDia: React.FC<{ total: number }> = ({ total }) => (
  */
 const SemContrato: React.FC<{ onConfigure: () => void }> = ({ onConfigure }) => (
   <div className="py-2">
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-5 opacity-40 pointer-events-none select-none">
-      <Metrica valor={0} rotulo="Falta planejar" detalhe="contratado e ainda sem pauta" />
-      <Metrica valor={0} rotulo="Em produção" detalhe="com a equipe" />
-      <Metrica valor={0} rotulo="Com o cliente" detalhe="aguardando aprovação" />
-      <Metrica valor={0} rotulo="Concluídas" detalhe="aprovadas ou no ar" />
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-x-6 gap-y-5 opacity-40 pointer-events-none select-none">
+      <Metrica valor={0} rotulo="Falta planejar" detalhe="na recorrência, sem tarefa" />
+      {ETAPAS.map((e) => (
+        <Metrica key={e.key} valor={0} rotulo={e.rotulo} detalhe={e.detalhe} />
+      ))}
     </div>
 
     <div className="mt-6 pt-5 border-t border-slate-200 dark:border-slate-800">

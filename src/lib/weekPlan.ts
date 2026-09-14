@@ -1,4 +1,4 @@
-import { Client, Task, ContractService } from '../types';
+import { Client, Task, ContractService, TaskStatus } from '../types';
 
 /* ============================================================================
  * Quanto o contrato prevê para a semana, e quanto já existe.
@@ -7,8 +7,73 @@ import { Client, Task, ContractService } from '../types';
  * cliente por cliente: "o que ainda falta entregar até domingo?".
  * ========================================================================== */
 
-const EM_PRODUCAO = ['nao_iniciado', 'em_andamento', 'planejamento', 'aguardar', 'urgencia'];
-const CONCLUIDAS = ['aprovado', 'postado'];
+/* ---------------------------------------------------------------------------
+ * Etapas da semana
+ *
+ * O caminho de uma publicação, na ordem em que a agência fala dela:
+ *   falta planejar → não iniciada → em andamento → aguardando aprovação
+ *   → aprovada → postada.
+ *
+ * "Falta planejar" não é status de tarefa: é a recorrência pedindo 3 posts
+ * e só 2 tarefas lançadas na semana. As outras etapas saem do status.
+ * ------------------------------------------------------------------------- */
+
+export type EtapaTarefa =
+  | 'naoIniciadas'
+  | 'emAndamento'
+  | 'aguardandoAprovacao'
+  | 'aprovadas'
+  | 'postadas';
+
+export const ETAPAS: { key: EtapaTarefa; rotulo: string; detalhe: string }[] = [
+  { key: 'naoIniciadas', rotulo: 'Não iniciadas', detalhe: 'tarefa criada, peça não começou' },
+  { key: 'emAndamento', rotulo: 'Em andamento', detalhe: 'peça em criação ou ajuste' },
+  { key: 'aguardandoAprovacao', rotulo: 'Aguardando aprovação', detalhe: 'com o cliente' },
+  { key: 'aprovadas', rotulo: 'Aprovadas', detalhe: 'prontas para postar' },
+  { key: 'postadas', rotulo: 'Postadas', detalhe: 'no ar' },
+];
+
+const ETAPA_DO_STATUS: Record<string, EtapaTarefa> = {
+  nao_iniciado: 'naoIniciadas',
+  aguardar: 'naoIniciadas',
+  urgencia: 'naoIniciadas',
+  planejamento: 'naoIniciadas',
+  em_andamento: 'emAndamento',
+  // O cliente pediu ajuste: a peça voltou para a mesa da equipe.
+  alterar: 'emAndamento',
+  em_aprovacao: 'aguardandoAprovacao',
+  aprovado: 'aprovadas',
+  postado: 'postadas',
+};
+
+const ETAPA_DO_GRUPO: Record<TaskStatus['group'], EtapaTarefa> = {
+  todo: 'naoIniciadas',
+  progress: 'emAndamento',
+  review: 'aguardandoAprovacao',
+  done: 'aprovadas',
+};
+
+/** Etapa da tarefa. Status criado pela agência entra pelo grupo dele. */
+export const etapaDaTarefa = (t: Task, statuses: TaskStatus[] = []): EtapaTarefa => {
+  const direta = ETAPA_DO_STATUS[t.status];
+  if (direta) return direta;
+  const grupo = statuses.find((s) => s.key === t.status)?.group;
+  return grupo ? ETAPA_DO_GRUPO[grupo] : 'naoIniciadas';
+};
+
+type ContagemEtapas = Record<EtapaTarefa, number>;
+
+const contarEtapas = (lista: Task[], statuses: TaskStatus[]): ContagemEtapas => {
+  const c: ContagemEtapas = {
+    naoIniciadas: 0,
+    emAndamento: 0,
+    aguardandoAprovacao: 0,
+    aprovadas: 0,
+    postadas: 0,
+  };
+  for (const t of lista) c[etapaDaTarefa(t, statuses)]++;
+  return c;
+};
 
 const diaDe = (t: Task): string | null => (t.postDate || t.date || '').split('T')[0] || null;
 
@@ -67,34 +132,25 @@ export const previstoNaSemana = (servico: ContractService, base = new Date()): n
   }
 };
 
-export interface ResumoCliente {
+export interface ResumoCliente extends ContagemEtapas {
   clientId: string;
   nome: string;
-  /** Quantas entregas o contrato prevê para esta semana. */
+  /** Quantas publicações a recorrência prevê para esta semana. */
   contratado: number;
-  /** Pautas já criadas com data dentro da semana. */
+  /** Tarefas lançadas com data dentro da semana. */
   planejado: number;
-  /** Criadas mas ainda não enviadas ao cliente. */
-  emProducao: number;
-  /** Enviadas e esperando o cliente. */
-  comCliente: number;
-  /** Aprovadas ou publicadas. */
-  concluido: number;
-  /** Contratado menos planejado — o que ainda nem virou pauta. */
+  /** Recorrência menos tarefas lançadas — o que ainda nem virou tarefa. */
   faltaPlanejar: number;
   /** O cliente tem serviços recorrentes cadastrados? */
   temContrato: boolean;
 }
 
-export interface ResumoSemana {
+export interface ResumoSemana extends ContagemEtapas {
   inicio: Date;
   fim: Date;
   clientes: ResumoCliente[];
   contratado: number;
   planejado: number;
-  emProducao: number;
-  comCliente: number;
-  concluido: number;
   faltaPlanejar: number;
   /** Nenhum cliente tem serviço recorrente cadastrado. */
   semContratos: boolean;
@@ -111,6 +167,7 @@ export interface ResumoSemana {
 export const resumoDaSemana = (
   clients: Client[],
   tasks: Task[],
+  statuses: TaskStatus[] = [],
   base = new Date()
 ): ResumoSemana => {
   const { inicio, fim, inicioChave, fimChave } = semanaDe(base);
@@ -125,20 +182,12 @@ export const resumoDaSemana = (
       return !!dia && dia >= inicioChave && dia <= fimChave;
     });
 
-    const emProducao = daSemana.filter((t) => EM_PRODUCAO.includes(t.status)).length;
-    const comCliente = daSemana.filter(
-      (t) => t.status === 'em_aprovacao' || t.status === 'alterar'
-    ).length;
-    const concluido = daSemana.filter((t) => CONCLUIDAS.includes(t.status)).length;
-
     return {
       clientId: client.id,
       nome: client.company || client.name || 'Cliente',
       contratado,
       planejado: daSemana.length,
-      emProducao,
-      comCliente,
-      concluido,
+      ...contarEtapas(daSemana, statuses),
       faltaPlanejar: Math.max(0, contratado - daSemana.length),
       temContrato: servicos.length > 0,
     };
@@ -147,34 +196,34 @@ export const resumoDaSemana = (
   const soma = (campo: keyof ResumoCliente) =>
     clientes.reduce((acc, c) => acc + (c[campo] as number), 0);
 
-  const contratado = soma('contratado');
   const faltaPlanejar = soma('faltaPlanejar');
-  const emProducao = soma('emProducao');
-  const comCliente = soma('comCliente');
+  const naoIniciadas = soma('naoIniciadas');
+  const emAndamento = soma('emAndamento');
+  const aguardandoAprovacao = soma('aguardandoAprovacao');
 
   return {
     inicio,
     fim,
     clientes,
-    contratado,
+    contratado: soma('contratado'),
     planejado: soma('planejado'),
-    emProducao,
-    comCliente,
-    concluido: soma('concluido'),
     faltaPlanejar,
+    naoIniciadas,
+    emAndamento,
+    aguardandoAprovacao,
+    aprovadas: soma('aprovadas'),
+    postadas: soma('postadas'),
     semContratos: clientes.every((c) => !c.temContrato),
-    tudoEmDia: faltaPlanejar === 0 && emProducao === 0 && comCliente === 0,
+    tudoEmDia:
+      faltaPlanejar === 0 && naoIniciadas === 0 && emAndamento === 0 && aguardandoAprovacao === 0,
   };
 };
 
-export interface DiaDaSemana {
+export interface DiaDaSemana extends ContagemEtapas {
   /** 'seg', 'ter'… */
   rotulo: string;
   chave: string;
   hoje: boolean;
-  emProducao: number;
-  comCliente: number;
-  concluido: number;
   total: number;
 }
 
@@ -186,7 +235,11 @@ const ROTULOS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom'];
  * Serve para enxergar desequilíbrio: segunda lotada e quinta vazia é problema de
  * distribuição, não de volume — e isso não aparece num número só.
  */
-export const cargaPorDia = (tasks: Task[], base = new Date()): DiaDaSemana[] => {
+export const cargaPorDia = (
+  tasks: Task[],
+  statuses: TaskStatus[] = [],
+  base = new Date()
+): DiaDaSemana[] => {
   const { inicio } = semanaDe(base);
   const hojeChave = chave(new Date());
 
@@ -200,9 +253,7 @@ export const cargaPorDia = (tasks: Task[], base = new Date()): DiaDaSemana[] => 
       rotulo,
       chave: k,
       hoje: k === hojeChave,
-      emProducao: doDia.filter((t) => EM_PRODUCAO.includes(t.status)).length,
-      comCliente: doDia.filter((t) => t.status === 'em_aprovacao' || t.status === 'alterar').length,
-      concluido: doDia.filter((t) => CONCLUIDAS.includes(t.status)).length,
+      ...contarEtapas(doDia, statuses),
       total: doDia.length,
     };
   });
