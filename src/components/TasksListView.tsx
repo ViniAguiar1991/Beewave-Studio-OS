@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
+  LayoutGrid,
+  Rows3,
+  CalendarDays,
   Plus,
   Search,
   X,
@@ -209,6 +212,12 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
 
   const groupableFields = allFields(customProperties).filter((f) => f.groupable);
 
+  const modes: { key: TaskView['mode']; label: string; icon: typeof Rows3 }[] = [
+    { key: 'list', label: 'Lista', icon: Rows3 },
+    { key: 'kanban', label: 'Quadro', icon: LayoutGrid },
+    { key: 'calendar', label: 'Calendário', icon: CalendarDays },
+  ];
+
   return (
     <div className="mx-auto max-w-[1500px] space-y-5 pb-16">
       {/* Cabeçalho */}
@@ -248,7 +257,6 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
           if (window.confirm(`Excluir a visão "${view.name}"?`)) deleteTaskView(view.id);
         }}
         onResetViews={resetTaskViews}
-        groupableFields={groupableFields}
         onAddProperty={addCustomProperty}
         onDeleteProperty={deleteCustomProperty}
       />
@@ -322,11 +330,49 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
           ))}
         </select>
 
+        <div className="flex items-center rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden">
+          {modes.map(({ key, label, icon: Icon }) => {
+            const isActive = view.mode === key;
+            return (
+              <button
+                key={key}
+                onClick={() => updateTaskView(view.id, { mode: key })}
+                aria-pressed={isActive}
+                className={`inline-flex items-center gap-1.5 h-9 px-3 t-ui transition-colors cursor-pointer ${
+                  isActive
+                    ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {view.mode === 'kanban' && (
+          <label className="flex items-center gap-2 t-meta text-slate-500">
+            Agrupar por
+            <select
+              value={view.groupBy || 'status'}
+              onChange={(e) => updateTaskView(view.id, { groupBy: e.target.value })}
+              className="h-9 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-2 t-ui text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white"
+            >
+              {groupableFields.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <button
           onClick={() => setSettingsOpen((v) => !v)}
           aria-expanded={settingsOpen}
           aria-label="Configurar visão"
-          title="Visualização, filtros, cores, colunas e ordenação"
+          title="Filtros, cores, colunas e ordenação"
           className={`ml-auto inline-flex items-center gap-1.5 h-9 px-3 rounded-lg t-ui transition-colors cursor-pointer ${
             settingsOpen
               ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950'

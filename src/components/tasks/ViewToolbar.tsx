@@ -14,9 +14,6 @@ import {
   EyeOff,
   Pencil,
   Users,
-  Rows3,
-  LayoutGrid,
-  CalendarDays,
 } from 'lucide-react';
 import {
   ColorRule,
@@ -60,15 +57,7 @@ interface ViewToolbarProps {
   publishing: boolean;
   /** Recria o trio de fábrica: Todas, Minhas tarefas e Pedidos do cliente. */
   onResetViews: () => void;
-  /** Campos pelos quais o Quadro pode agrupar as colunas. */
-  groupableFields: { id: string; label: string }[];
 }
-
-const MODOS: { key: TaskView['mode']; label: string; icon: typeof Rows3 }[] = [
-  { key: 'list', label: 'Lista', icon: Rows3 },
-  { key: 'kanban', label: 'Quadro', icon: LayoutGrid },
-  { key: 'calendar', label: 'Calendário', icon: CalendarDays },
-];
 
 type PanelKey = 'filtro' | 'cores' | 'colunas' | 'ordem' | null;
 
@@ -97,7 +86,6 @@ export const ViewToolbar: React.FC<ViewToolbarProps> = ({
   onPublish,
   publishing,
   onResetViews,
-  groupableFields,
 }) => {
   const [panel, setPanel] = useState<PanelKey>(null);
   const [renaming, setRenaming] = useState(false);
@@ -174,53 +162,6 @@ export const ViewToolbar: React.FC<ViewToolbarProps> = ({
           configuração, não o trabalho do dia. */}
       {!open ? null : (
       <div className="flex items-center gap-2 flex-wrap">
-        {/* Modo de exibição. É propriedade da visão — "Minhas tarefas" pode
-            abrir em Quadro e "Todas" em Lista — então mora junto do resto da
-            configuração dela, não na barra do dia a dia. */}
-        <div
-          className="flex items-center rounded-lg border border-slate-300 dark:border-slate-700 overflow-hidden"
-          role="group"
-          aria-label="Modo de visualização"
-        >
-          {MODOS.map(({ key, label, icon: Icon }) => {
-            const ativo = view.mode === key;
-            return (
-              <button
-                key={key}
-                onClick={() => onUpdateView({ mode: key })}
-                aria-pressed={ativo}
-                className={`inline-flex items-center gap-1.5 h-8 px-2.5 t-ui transition-colors cursor-pointer ${
-                  ativo
-                    ? 'bg-slate-950 dark:bg-white text-white dark:text-slate-950'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                }`}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {label}
-              </button>
-            );
-          })}
-        </div>
-
-        {view.mode === 'kanban' && (
-          <label className="flex items-center gap-1.5 t-meta text-slate-500">
-            agrupar por
-            <select
-              value={view.groupBy || 'status'}
-              onChange={(e) => onUpdateView({ groupBy: e.target.value })}
-              className="h-8 rounded-lg border border-slate-300 dark:border-slate-700 bg-transparent px-2 t-ui text-slate-800 dark:text-slate-200 cursor-pointer focus:outline-none focus:border-slate-900 dark:focus:border-white"
-            >
-              {groupableFields.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <span className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1" aria-hidden="true" />
-
         <ToolButton
           icon={Filter}
           label="Filtros"

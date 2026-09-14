@@ -692,7 +692,10 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                         Membros da equipe
                       </div>
                       <div className="max-h-48 overflow-y-auto space-y-1 mt-1">
-                        {users.map((u) => {
+                        {/* A lista de usuários também guarda os logins de portal
+                            dos clientes — é assim que eles entram. Pauta se atribui
+                            a quem produz, então só a equipe aparece aqui. */}
+                        {users.filter((u) => u.role !== 'cliente').map((u) => {
                           const isSelected = assigneeIds.includes(u.id);
                           return (
                             <button
