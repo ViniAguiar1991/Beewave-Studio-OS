@@ -3,9 +3,29 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+// Identidade da publicação. Na Vercel é o commit; localmente, o horário do build.
+// O app compara com /versao.json para saber quando recarregar (src/lib/atualizacao.ts).
+const versaoDoApp = process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now());
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    define: {
+      __VERSAO_APP__: JSON.stringify(versaoDoApp),
+    },
+    plugins: [
+      react(),
+      tailwindcss(),
+      {
+        name: 'versao-do-app',
+        generateBundle() {
+          this.emitFile({
+            type: 'asset',
+            fileName: 'versao.json',
+            source: JSON.stringify({ versao: versaoDoApp }),
+          });
+        },
+      },
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

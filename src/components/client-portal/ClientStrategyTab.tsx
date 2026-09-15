@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowDown, ArrowUp, Eye, EyeOff, FileUp, Pencil, Plus, Printer, Trash2, X } from 'lucide-react';
 import { Client, ClientStrategyDocument, StrategyChapter } from '../../types';
 import { StrategyImportModal } from './StrategyImportModal';
+import { impedirRecarga } from '../../lib/atualizacao';
 import { Button, EmptyState } from '../ui';
 import { BlocoView } from './strategy/BlocoView';
 import { EditorBloco, SeletorDeEstilo, TextoEditavel } from './strategy/EditorBloco';
@@ -364,7 +365,12 @@ const EditorEstrategia: React.FC<{
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', aviso);
-    return () => window.removeEventListener('beforeunload', aviso);
+    // Rascunho aberto também segura a atualização automática de versão.
+    const soltar = impedirRecarga();
+    return () => {
+      window.removeEventListener('beforeunload', aviso);
+      soltar();
+    };
   }, []);
 
   return (

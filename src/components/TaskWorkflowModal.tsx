@@ -19,6 +19,7 @@ import {
 import { useAppStore } from '../store';
 import { uploadTaskFileToCloud, loadTaskFileDataUrl, reenviarArte } from '../services/taskFileCloudSync';
 import { esquecerArte } from '../hooks/useTaskFileSrc';
+import { impedirRecarga } from '../lib/atualizacao';
 import { ArteDaTarefa, ehArteExibivel } from './ArteDaTarefa';
 import { Task, TaskFile, FunnelStage } from '../types';
 
@@ -149,6 +150,9 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
     setDriveLink((prev) => (prev !== (task.driveLink || '') ? (task.driveLink || '') : prev));
     setFiles(task.files || []);
   }, [task?.id]);
+
+  // Com a tarefa aberta o app não recarrega sozinho para atualizar de versão.
+  useEffect(() => impedirRecarga(), []);
 
   // Live editing presence lock
   useEffect(() => {
