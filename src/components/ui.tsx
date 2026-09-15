@@ -284,7 +284,7 @@ export const PostImage: React.FC<{
         className={`grid place-items-center bg-slate-50 dark:bg-slate-900 text-slate-400 dark:text-slate-600 ${className}`}
       >
         <span className="t-meta px-2 text-center">
-          {indisponivel ? 'Arte indisponível' : 'Arte ainda não enviada'}
+          {indisponivel ? 'Arte em atualização' : 'Arte ainda não enviada'}
         </span>
       </div>
     );

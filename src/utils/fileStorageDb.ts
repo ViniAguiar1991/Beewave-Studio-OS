@@ -102,6 +102,43 @@ export async function getFileFromLocalDb(fileId: string): Promise<string | null>
   });
 }
 
+/**
+ * A arte existe neste navegador? Só a chave, sem carregar a imagem na
+ * memória — o reparo em segundo plano confere dezenas de artes de uma vez.
+ */
+export async function temArquivoNoLocalDb(fileId: string): Promise<boolean> {
+  if (!fileId) return false;
+  if (memoryCache.has(fileId)) return true;
+  const db = await getDb();
+  if (!db) return false;
+  return new Promise((resolve) => {
+    try {
+      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).getKey(fileId);
+      request.onsuccess = () => resolve(request.result !== undefined);
+      request.onerror = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+/** Lê a arte sem guardar no cache de memória (para subir e soltar). */
+export async function lerArquivoDoLocalDb(fileId: string): Promise<string | null> {
+  if (!fileId) return null;
+  if (memoryCache.has(fileId)) return memoryCache.get(fileId) || null;
+  const db = await getDb();
+  if (!db) return null;
+  return new Promise((resolve) => {
+    try {
+      const request = db.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(fileId);
+      request.onsuccess = () => resolve(request.result?.dataUrl || null);
+      request.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
 export async function deleteFileFromLocalDb(fileId: string): Promise<void> {
   if (!fileId) return;
   memoryCache.delete(fileId);

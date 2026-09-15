@@ -57,13 +57,13 @@ export const ArteDaTarefa: React.FC<{
     return (
       <span
         role="img"
-        aria-label={`${file?.name || 'Arte'} indisponível`}
-        title="Esta arte não foi encontrada. Envie de novo na tarefa."
+        aria-label={`${file?.name || 'Arte'} ainda não chegou`}
+        title="Esta arte ainda não chegou inteira na nuvem. Ela aparece sozinha quando quem enviou abrir o app; se não aparecer, envie de novo na tarefa."
         className={`grid place-items-center bg-slate-100 dark:bg-slate-800 text-slate-400 ${className}`}
       >
         <span className="flex flex-col items-center gap-1 px-2 text-center">
           <ImageOff className={compacta ? 'h-3.5 w-3.5' : 'h-5 w-5'} />
-          {!compacta && <span className="t-meta">Arte indisponível</span>}
+          {!compacta && <span className="t-meta">Arte ainda não chegou</span>}
         </span>
       </span>
     );

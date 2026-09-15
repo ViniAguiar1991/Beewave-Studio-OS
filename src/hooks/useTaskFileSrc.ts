@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react';
 import { TaskFile } from '../types';
-import { loadTaskFileDataUrl } from '../services/taskFileCloudSync';
+import { loadTaskFileDataUrl, observarChegadaDaArte } from '../services/taskFileCloudSync';
 
-/** O que já foi resolvido nesta sessão, para trocar de tela sem piscar. */
-const resolvidos = new Map<string, string | null>();
+/**
+ * Artes já carregadas nesta sessão, para trocar de tela sem piscar.
+ * Só guarda o que achou: "não achei" guardado aqui deixava a arte quebrada
+ * até recarregar, mesmo depois de ela chegar na nuvem.
+ */
+const resolvidos = new Map<string, string>();
+
+/** Esquece a arte carregada — usado quando ela é substituída. */
+export const esquecerArte = (fileId: string) => resolvidos.delete(fileId);
 
 /** Arquivo que é imagem ou vídeo guardado pelo app, não link externo. */
 export const ehMidiaGuardada = (f: Partial<TaskFile> | undefined) =>
@@ -45,15 +52,31 @@ export function useTaskFileSrc(file: TaskFile | undefined | null, taskId?: strin
     }
 
     let vivo = true;
-    setCarregando(true);
-    loadTaskFileDataUrl(file, taskId).then((url) => {
-      resolvidos.set(file.id, url);
-      if (!vivo) return;
-      setSrc(url);
-      setCarregando(false);
-    });
+    let pararDeObservar: (() => void) | null = null;
+
+    const carregar = (primeira: boolean) => {
+      if (primeira) setCarregando(true);
+      loadTaskFileDataUrl(file, taskId).then((url) => {
+        if (url) resolvidos.set(file.id, url);
+        if (!vivo) return;
+        if (url || primeira) {
+          setSrc(url);
+          setCarregando(false);
+        }
+        if (url) {
+          pararDeObservar?.();
+          pararDeObservar = null;
+        } else if (!pararDeObservar) {
+          // Não chegou ainda: fica escutando e mostra assim que completar.
+          pararDeObservar = observarChegadaDaArte(file.id, () => carregar(false));
+        }
+      });
+    };
+    carregar(true);
+
     return () => {
       vivo = false;
+      pararDeObservar?.();
     };
     // O id identifica a arte; mudar outros campos não exige buscar de novo.
   }, [file?.id, imediato, taskId]);

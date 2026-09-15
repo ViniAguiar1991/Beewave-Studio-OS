@@ -14,9 +14,11 @@ import {
   ChevronRight,
   Download,
   Maximize2,
+  RefreshCw,
 } from 'lucide-react';
 import { useAppStore } from '../store';
-import { uploadTaskFileToCloud, loadTaskFileDataUrl } from '../services/taskFileCloudSync';
+import { uploadTaskFileToCloud, loadTaskFileDataUrl, reenviarArte } from '../services/taskFileCloudSync';
+import { esquecerArte } from '../hooks/useTaskFileSrc';
 import { ArteDaTarefa, ehArteExibivel } from './ArteDaTarefa';
 import { Task, TaskFile, FunnelStage } from '../types';
 
@@ -92,6 +94,10 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  /** Artes que não chegaram inteiras na nuvem e não existem neste navegador. */
+  const [artesFaltando, setArtesFaltando] = useState<Set<string>>(new Set());
+  const reenvioInputRef = useRef<HTMLInputElement>(null);
+  const [reenviandoId, setReenviandoId] = useState<string | null>(null);
   const assigneeDropdownRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef({
     title,
@@ -457,6 +463,48 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
       fileInputRef.current.value = '';
     }
     setIsUploading(false);
+  };
+
+  /**
+   * Enviar de novo uma arte que não chegou, no mesmo lugar. Mantém o id: a
+   * ordem do carrossel, o preview do cliente e quem estiver com a tarefa
+   * aberta recebem a arte nova sem ninguém excluir e adicionar.
+   */
+  const handleReenviarArte = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const escolhido = e.target.files?.[0];
+    const alvo = files.find((f) => f.id === reenviandoId);
+    if (reenvioInputRef.current) reenvioInputRef.current.value = '';
+    if (!escolhido || !alvo || !task) return;
+
+    const dataUrl = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string) || '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(escolhido);
+    });
+    if (!dataUrl) return;
+
+    const nova: TaskFile = {
+      ...alvo,
+      name: escolhido.name,
+      type: escolhido.type || alvo.type,
+      size: escolhido.size,
+      dataUrl,
+      uploadedAt: new Date().toISOString(),
+    };
+    // O envio entra primeiro, para a gravação da tarefa logo abaixo reconhecer
+    // que essa arte já está subindo e não mandar de novo.
+    reenviarArte(task.id, nova).catch((err) => console.warn('Reenvio da arte:', err));
+    esquecerArte(alvo.id);
+    const nextFiles = files.map((f) => (f.id === alvo.id ? nova : f));
+    setFiles(nextFiles);
+    updateTask(task.id, { files: nextFiles });
+    setArtesFaltando((atual) => {
+      const proximo = new Set(atual);
+      proximo.delete(alvo.id);
+      return proximo;
+    });
+    setReenviandoId(null);
   };
 
   const handleRemoveFile = (fileId: string) => {
@@ -951,6 +999,13 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                 onChange={handleFileUpload}
                 className="hidden"
               />
+              <input
+                ref={reenvioInputRef}
+                type="file"
+                accept="image/*,video/*"
+                onChange={handleReenviarArte}
+                className="hidden"
+              />
               <div className="flex items-center gap-2 mb-3">
                 <button
                   id="btn-upload-files"
@@ -997,11 +1052,36 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                           taskId={task?.id}
                           alt={file.name}
                           className="w-full h-full object-cover absolute inset-0"
+                          onLoadSrc={(src) =>
+                            setArtesFaltando((atual) => {
+                              if (!src === atual.has(file.id)) return atual;
+                              const proximo = new Set(atual);
+                              if (src) proximo.delete(file.id);
+                              else proximo.add(file.id);
+                              return proximo;
+                            })
+                          }
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs">
                           Arquivo
                         </div>
+                      )}
+
+                      {artesFaltando.has(file.id) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReenviandoId(file.id);
+                            reenvioInputRef.current?.click();
+                          }}
+                          className="absolute top-1.5 inset-x-1.5 z-30 inline-flex items-center justify-center gap-1 rounded-md bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-700 px-1.5 py-1 text-[10px] font-semibold text-slate-800 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-900 cursor-pointer"
+                          title="Esta arte não chegou inteira na nuvem. Escolha o arquivo de novo para substituir no mesmo lugar."
+                        >
+                          <RefreshCw className="h-3 w-3" />
+                          Enviar de novo
+                        </button>
                       )}
 
                       {/* Dark gradient with filename overlay + download button */}

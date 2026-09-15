@@ -10,7 +10,7 @@ import {
 } from '../firebase';
 import { useAppStore } from '../store';
 import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty, Campaign } from '../types';
-import { garantirArquivoNaNuvem, deleteTaskFileFromCloud } from './taskFileCloudSync';
+import { garantirArquivoNaNuvem, deleteTaskFileFromCloud, repararArtesDesteNavegador } from './taskFileCloudSync';
 import {
   fimDeEnvio,
   inicioDeEnvio,
@@ -232,6 +232,12 @@ export function initFirestoreSync() {
           return dateA.localeCompare(dateB);
         });
         useAppStore.setState({ tasks });
+
+        // Com a lista da nuvem em mãos, confere as artes deste navegador e
+        // sobe as que ficaram pela metade. Uma vez por sessão, sem pressa.
+        if (!snapshot.metadata.fromCache) {
+          setTimeout(() => void repararArtesDesteNavegador(useAppStore.getState().tasks), 8000);
+        }
       }
     });
 

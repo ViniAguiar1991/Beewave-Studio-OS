@@ -13,6 +13,8 @@ import {
   query,
   where,
   serverTimestamp,
+  writeBatch,
+  getCountFromServer,
   Firestore,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
@@ -58,4 +60,6 @@ export {
   query,
   where,
   serverTimestamp,
+  writeBatch,
+  getCountFromServer,
 };
