@@ -338,6 +338,22 @@ export async function repararArtesDesteNavegador(tarefas: Task[]): Promise<void>
 const emAndamento = new Map<string, Promise<string | null>>();
 
 /**
+ * Artes que já sabemos que não estão inteiras na nuvem, com a marca do
+ * cabeçalho no momento da conferência.
+ *
+ * Sem isso, cada vez que uma miniatura quebrada aparecia na tela — trocar de
+ * aba, filtrar a lista, abrir a tarefa — o app lia o cabeçalho e todos os
+ * pedaços de novo. Uma lista com as 24 artes incompletas gastava centenas de
+ * leituras a cada troca de tela, e a cota diária de leitura acabou em 15/09.
+ * Agora a conferência é uma por sessão e a escuta do cabeçalho avisa quando
+ * a arte completar.
+ */
+const faltando = new Map<string, string>();
+
+const marcaDoCabecalho = (existe: boolean, dados?: any) =>
+  existe ? `${dados?.updatedAt}|${dados?.totalChars}|${dados?.totalChunks}` : 'sem-cabecalho';
+
+/**
  * Busca os pedaços no Firestore e remonta a imagem.
  *
  * Só devolve se TODOS os pedaços chegaram. A versão anterior concatenava o
@@ -346,24 +362,47 @@ const emAndamento = new Map<string, Promise<string | null>>();
  */
 async function baixarDaNuvem(file: TaskFile): Promise<string | null> {
   const headerSnap = await getDoc(doc(db, COLLECTIONS.TASK_FILES, file.id));
-  if (!headerSnap.exists()) return null;
+  const marca = marcaDoCabecalho(headerSnap.exists(), headerSnap.data());
+  if (!headerSnap.exists()) {
+    faltando.set(file.id, marca);
+    return null;
+  }
 
   const header = headerSnap.data();
   if (!header.hasPayload) return null;
 
   const totalChunks = header.totalChunks || 1;
+
+  // Conta antes de baixar: uma leitura diz se falta pedaço. Baixar tudo para
+  // descobrir que está incompleto custava uma leitura por pedaço.
+  if (totalChunks > 1) {
+    const contagem = await getCountFromServer(
+      query(collection(db, COLLECTIONS.TASK_FILE_CHUNKS), where('fileId', '==', file.id))
+    );
+    if (contagem.data().count < totalChunks) {
+      faltando.set(file.id, marca);
+      return null;
+    }
+  }
+
   const snaps = await Promise.all(
     Array.from({ length: totalChunks }, (_, i) =>
       getDoc(doc(db, COLLECTIONS.TASK_FILE_CHUNKS, `${file.id}_${i}`))
     )
   );
 
-  if (snaps.some((s) => !s.exists())) return null;
+  const dataUrl = snaps.map((s) => (s.exists() ? s.data()?.data || '' : '')).join('');
+  if (
+    snaps.some((s) => !s.exists()) ||
+    !dataUrl.startsWith('data:') ||
+    (header.totalChars && dataUrl.length !== header.totalChars)
+  ) {
+    faltando.set(file.id, marca);
+    return null;
+  }
 
-  const dataUrl = snaps.map((s) => s.data()?.data || '').join('');
-  if (!dataUrl.startsWith('data:')) return null;
-  if (header.totalChars && dataUrl.length !== header.totalChars) return null;
-
+  faltando.delete(file.id);
+  encerrarObservacao(file.id);
   confirmar(file.id);
   await saveFileToLocalDb(file.id, dataUrl, {
     name: file.name,
@@ -401,6 +440,9 @@ export async function loadTaskFileDataUrl(file: TaskFile, taskId?: string): Prom
       return local;
     }
 
+    // Já conferida nesta sessão e incompleta: espera a escuta avisar.
+    if (faltando.has(file.id)) return null;
+
     try {
       return await baixarDaNuvem(file);
     } catch (err) {
@@ -418,29 +460,50 @@ export async function loadTaskFileDataUrl(file: TaskFile, taskId?: string): Prom
 }
 
 /**
- * Avisa quando o cabeçalho da arte mudar — sinal de que ela acabou de chegar
- * inteira na nuvem. A primeira leitura é o ponto de partida e não conta.
+ * Uma escuta por arte incompleta, compartilhada por todas as telas que a
+ * mostram e mantida aberta na sessão — reabrir a cada tela custaria leitura.
+ */
+const observadores = new Map<string, { parar: () => void; avisos: Set<() => void> }>();
+
+function encerrarObservacao(fileId: string) {
+  const obs = observadores.get(fileId);
+  if (!obs) return;
+  obs.parar();
+  observadores.delete(fileId);
+}
+
+/**
+ * Avisa quando o cabeçalho da arte mudar em relação ao que foi conferido —
+ * sinal de que ela acabou de chegar inteira na nuvem.
  */
 export function observarChegadaDaArte(fileId: string, aoChegar: () => void): () => void {
   if (!fileId || isCloudSyncDisabled()) return () => {};
-  let marcaInicial: string | null | undefined;
-  return onSnapshot(
-    doc(db, COLLECTIONS.TASK_FILES, fileId),
-    (snap) => {
-      const marca = snap.exists() ? `${snap.data().updatedAt}|${snap.data().totalChars}` : null;
-      if (marcaInicial === undefined) {
-        marcaInicial = marca;
-        return;
+
+  let obs = observadores.get(fileId);
+  if (!obs) {
+    const avisos = new Set<() => void>();
+    const parar = onSnapshot(
+      doc(db, COLLECTIONS.TASK_FILES, fileId),
+      (snap) => {
+        const conferida = faltando.get(fileId);
+        if (conferida === undefined) return;
+        if (marcaDoCabecalho(snap.exists(), snap.data()) === conferida) return;
+        faltando.delete(fileId);
+        avisos.forEach((avisar) => avisar());
+      },
+      () => {
+        /* sem escuta, a arte aparece na próxima abertura */
       }
-      if (marca && marca !== marcaInicial) {
-        marcaInicial = marca;
-        aoChegar();
-      }
-    },
-    () => {
-      /* sem escuta, a arte aparece na próxima abertura */
-    }
-  );
+    );
+    obs = { parar, avisos };
+    observadores.set(fileId, obs);
+  }
+
+  const registro = obs;
+  registro.avisos.add(aoChegar);
+  return () => {
+    registro.avisos.delete(aoChegar);
+  };
 }
 
 /* ---------------------------------------------------------------------------

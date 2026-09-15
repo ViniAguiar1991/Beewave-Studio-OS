@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAppStore, useCurrentUser } from './store';
-import { initFirestoreSync, isCloudSyncDisabled } from './services/firestoreSync';
+import { initFirestoreSync, iniciarSyncDaSessao, isCloudSyncDisabled } from './services/firestoreSync';
 import { AppSidebar } from './components/AppSidebar';
 import { DashboardHome } from './components/DashboardHome';
 import { TasksListView } from './components/TasksListView';
@@ -79,6 +79,14 @@ export function App() {
     }
     initFirestoreSync();
   }, []);
+
+  // Tarefas, campanhas e o resto só depois do login — e, para o cliente no
+  // portal, só as dele. Trocar de usuário na mesma aba troca a escuta.
+  useEffect(() => {
+    iniciarSyncDaSessao(
+      currentUser ? { id: currentUser.id, role: currentUser.role, clientId: currentUser.clientId } : null
+    );
+  }, [currentUser?.id, currentUser?.role, currentUser?.clientId]);
 
   // Parse URL Search Params on mount (handles invite links like ?email=colab@agency.com, ?portal=c_zaffari or ?logout=true)
   useEffect(() => {

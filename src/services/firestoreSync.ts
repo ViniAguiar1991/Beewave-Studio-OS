@@ -7,6 +7,8 @@ import {
   deleteDoc,
   getDocs,
   onSnapshot,
+  query,
+  where,
 } from '../firebase';
 import { useAppStore } from '../store';
 import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty, Campaign } from '../types';
@@ -36,10 +38,15 @@ const apagar = (ref: any): Promise<void> => rastrearEnvio(deleteDoc(ref));
  * dos colegas. Agora ele reabre com espera crescente (30 s, 1 min, 2 min…
  * até 10 min).
  */
-function escutar(ref: any, nome: string, aoReceber: (snapshot: any) => void) {
+function escutar(ref: any, nome: string, aoReceber: (snapshot: any) => void): () => void {
   let tentativa = 0;
+  let ativo = true;
+  let pararAtual: (() => void) | null = null;
+  let relogio: ReturnType<typeof setTimeout> | null = null;
+
   const abrir = () => {
-    onSnapshot(
+    if (!ativo) return;
+    pararAtual = onSnapshot(
       ref,
       (snapshot: any) => {
         tentativa = 0;
@@ -47,15 +54,23 @@ function escutar(ref: any, nome: string, aoReceber: (snapshot: any) => void) {
         aoReceber(snapshot);
       },
       (error: any) => {
+        pararAtual = null;
         console.warn(`Listener de ${nome} caiu (${error?.code || error?.message}); tentando de novo.`);
         registrarFalhaDaNuvem(error);
+        if (!ativo) return;
         const espera = Math.min(30_000 * 2 ** tentativa, 10 * 60_000);
         tentativa++;
-        setTimeout(abrir, espera);
+        relogio = setTimeout(abrir, espera);
       }
     );
   };
   abrir();
+
+  return () => {
+    ativo = false;
+    if (relogio) clearTimeout(relogio);
+    pararAtual?.();
+  };
 }
 
 /**
@@ -153,15 +168,98 @@ export function initFirestoreSync() {
       }
     });
 
+    // 5a. Mascote compartilhado
+    const brandingDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
+    escutar(brandingDocRef, 'mascote', (docSnap) => {
+      if (!docSnap.exists()) return;
+      const dados = docSnap.data() as {
+        mascotImages?: string[];
+        dashboardPhrases?: string[];
+      };
+      if (Array.isArray(dados?.mascotImages)) {
+        useAppStore.setState({ mascotImages: dados.mascotImages });
+      }
+      // Lista vazia é uma escolha válida (voltar ao padrão é outra coisa),
+      // então só ignoramos quando o campo não é lista.
+      if (Array.isArray(dados?.dashboardPhrases)) {
+        useAppStore.setState({ dashboardPhrases: dados.dashboardPhrases });
+      }
+    });
+
+    // 6. Listen to App Configuration (Agency, Categories, Plans, Statuses)
+    const agencyConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
+    escutar(agencyConfigDocRef, 'configuração', (docSnap) => {
+      if (docSnap.exists()) {
+        const config = docSnap.data();
+        if (config) {
+          useAppStore.setState((state) => ({
+            agencyName: config.agencyName || state.agencyName,
+            categories: config.categories?.length ? config.categories : state.categories,
+            plans: config.plans?.length ? config.plans : state.plans,
+            statuses: config.statuses?.length ? config.statuses : state.statuses,
+            newsNiches: config.newsNiches?.length ? config.newsNiches : state.newsNiches,
+            promptFolders: config.promptFolders?.length ? config.promptFolders : state.promptFolders,
+            prompts: config.prompts?.length ? config.prompts : state.prompts,
+          }));
+        }
+      }
+    });
+
+    // Update cloud sync status
+    useAppStore.setState((s) => ({
+      cloudSync: {
+        ...s.cloudSync,
+        enabled: true,
+        connected: true,
+        lastSync: new Date().toISOString(),
+        backupCount: (s.cloudSync.backupCount || 0) + 1,
+      },
+    }));
+  } catch (err) {
+    console.error('Error initializing Firestore sync:', err);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Escuta da sessão: só depois do login, e só o que a pessoa usa
+ *
+ * Antes tudo era escutado assim que a página abria — inclusive na tela de
+ * login, inclusive para o cliente no portal. Cada abertura lia todas as
+ * tarefas, campanhas e notas da agência. Com o limite diário de leituras do
+ * plano gratuito, isso somado ao uso da equipe esgotou a cota em 15/09 e
+ * ninguém mais recebia nada, nem com F5.
+ *
+ * Antes do login ficam só usuários e clientes (o login confere por eles),
+ * configuração e mascote.
+ * ------------------------------------------------------------------------- */
+let pararSessao: (() => void)[] = [];
+let chaveDaSessao: string | null = null;
+
+export function iniciarSyncDaSessao(usuario: { id: string; role: string; clientId?: string } | null) {
+  if (isCloudSyncDisabled()) return;
+  const chave = usuario ? `${usuario.id}|${usuario.role}|${usuario.clientId || ''}` : null;
+  if (chave === chaveDaSessao) return;
+
+  pararSessao.forEach((p) => p());
+  pararSessao = [];
+  chaveDaSessao = chave;
+  if (!usuario) return;
+
+  const clienteId = usuario.role === 'cliente' ? usuario.clientId || '__sem_cliente__' : null;
+  const parar = pararSessao;
+
+  try {
     // 2b. Campanhas
     //
     // Faltava: campanha criada num computador não aparecia em outro nem para
     // o colega, e sumia se o navegador fosse limpo. Como ela também alimenta
     // a aba Campanhas do portal, o cliente via uma lista que dependia de qual
     // máquina a agência tinha usado.
-    const campaignsCol = collection(db, COLLECTIONS.CAMPAIGNS);
-    escutar(campaignsCol, 'campanhas', (snapshot) => {
-      if (snapshot.empty && !snapshot.metadata.fromCache) {
+    const campaignsRef = clienteId
+      ? query(collection(db, COLLECTIONS.CAMPAIGNS), where('clientId', '==', clienteId))
+      : collection(db, COLLECTIONS.CAMPAIGNS);
+    parar.push(escutar(campaignsRef, 'campanhas', (snapshot) => {
+      if (snapshot.empty && !snapshot.metadata.fromCache && !clienteId) {
         // Primeira vez com a coleção criada: as campanhas que já existiam
         // neste navegador sobem, senão ficariam presas aqui para sempre —
         // o listener só sabe puxar.
@@ -173,13 +271,18 @@ export function initFirestoreSync() {
         const raw = docSnap.data() as any;
         if (raw) campaigns.push({ id: docSnap.id, ...raw } as Campaign);
       });
-      if (campaigns.length > 0) useAppStore.setState({ campaigns });
-    });
+      if (campaigns.length > 0 || clienteId) useAppStore.setState({ campaigns });
+    }));
 
     // 3. Listen to Tasks collection (Real-time updates between all users)
-    const tasksCol = collection(db, COLLECTIONS.TASKS);
-    escutar(tasksCol, 'tarefas', (snapshot) => {
-      if (snapshot.empty && !snapshot.metadata.fromCache && !isSyncingToCloud) {
+    // O cliente no portal só escuta as próprias tarefas. Antes cada visita
+    // ao portal lia as tarefas de todos os clientes da agência — leitura
+    // gasta da cota e dado de um cliente carregado no navegador de outro.
+    const tasksRef = clienteId
+      ? query(collection(db, COLLECTIONS.TASKS), where('clientId', '==', clienteId))
+      : collection(db, COLLECTIONS.TASKS);
+    parar.push(escutar(tasksRef, 'tarefas', (snapshot) => {
+      if (snapshot.empty && !snapshot.metadata.fromCache && !isSyncingToCloud && !clienteId) {
         // If empty on cloud, seed local default tasks
         seedInitialTasksToCloud();
         return;
@@ -219,7 +322,7 @@ export function initFirestoreSync() {
           tasks.push(localEhMaisNovo ? { ...localMatch, files: mergedFiles } : t);
         }
       });
-      if (tasks.length > 0) {
+      if (tasks.length > 0 || clienteId) {
         // Tasks with dates first (chronological), tasks without date at the end of queue
         tasks.sort((a, b) => {
           const dateA = a.postDate;
@@ -235,149 +338,105 @@ export function initFirestoreSync() {
 
         // Com a lista da nuvem em mãos, confere as artes deste navegador e
         // sobe as que ficaram pela metade. Uma vez por sessão, sem pressa.
-        if (!snapshot.metadata.fromCache) {
+        if (!snapshot.metadata.fromCache && !clienteId) {
           setTimeout(() => void repararArtesDesteNavegador(useAppStore.getState().tasks), 8000);
         }
       }
-    });
-
-    // 4. Listen to Notes collection
-    const notesCol = collection(db, COLLECTIONS.NOTES);
-    escutar(notesCol, 'notas', (snapshot) => {
-      if (!snapshot.empty) {
-        const notes: NoteItem[] = [];
-        snapshot.forEach((docSnap) => {
-          const raw = docSnap.data() as any;
-          if (raw) {
-            notes.push({ id: docSnap.id, ...raw } as NoteItem);
-          }
-        });
-        useAppStore.setState({ notes });
-      }
-    });
-
-    // 5. Listen to Admin System Prompts & Global Settings
-    const adminPromptsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'adminPrompts');
-    escutar(adminPromptsDocRef, 'prompts', (docSnap) => {
-      if (docSnap.exists()) {
-        const cloudPrompts = docSnap.data() as AdminSystemPrompts;
-        if (cloudPrompts && (cloudPrompts.headlinePrompt || cloudPrompts.copyCaptionPrompt)) {
-          useAppStore.setState((state) => ({
-            adminPrompts: {
-              ...state.adminPrompts,
-              ...cloudPrompts,
-            },
-          }));
-        }
-      } else if (!isSyncingToCloud) {
-        // Seed default or local admin prompts to Firestore
-        const currentPrompts = useAppStore.getState().adminPrompts;
-        if (currentPrompts) {
-          syncAdminPromptsToCloud(currentPrompts);
-        }
-      }
-    });
-
-    // 5a. Mascote compartilhado
-    const brandingDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'branding');
-    escutar(brandingDocRef, 'mascote', (docSnap) => {
-      if (!docSnap.exists()) return;
-      const dados = docSnap.data() as {
-        mascotImages?: string[];
-        dashboardPhrases?: string[];
-      };
-      if (Array.isArray(dados?.mascotImages)) {
-        useAppStore.setState({ mascotImages: dados.mascotImages });
-      }
-      // Lista vazia é uma escolha válida (voltar ao padrão é outra coisa),
-      // então só ignoramos quando o campo não é lista.
-      if (Array.isArray(dados?.dashboardPhrases)) {
-        useAppStore.setState({ dashboardPhrases: dados.dashboardPhrases });
-      }
-    });
-
-    // 5b. Visões da Central de Tarefas publicadas para a equipe
-    const taskViewsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
-    escutar(taskViewsDocRef, 'visões', (docSnap) => {
-      if (!docSnap.exists()) return;
-      const dados = docSnap.data() as {
-        taskViews?: TaskView[];
-        customProperties?: CustomProperty[];
-      };
-      if (!dados?.taskViews?.length) return;
-
-      useAppStore.setState((state) => {
-        const publicadas = dados.taskViews || [];
-
-        // Visões que a pessoa criou e ainda não publicou continuam na máquina
-        // dela: receber a configuração da equipe não pode apagar rascunho.
-        //
-        // As visões de sistema são a exceção. "Todas as tarefas" e "Minhas
-        // tarefas" nascem de buildDefaultViews com id sorteado, diferente em
-        // cada navegador — então nunca batiam com as publicadas e sobravam
-        // como cópia. Quem abria o app via duas "Todas as tarefas" lado a
-        // lado. Quando a equipe publica as dela, as locais saem de cena.
-        const publicadasTemSistema = publicadas.some((p) => p.isSystem);
-        const locaisNaoPublicadas = state.taskViews.filter(
-          (v) =>
-            !v.isShared &&
-            !(v.isSystem && publicadasTemSistema) &&
-            !publicadas.some((p) => p.id === v.id)
-        );
-        const todas = [...publicadas, ...locaisNaoPublicadas];
-        return {
-          taskViews: todas,
-          customProperties: dados.customProperties || state.customProperties,
-          activeViewId: todas.some((v) => v.id === state.activeViewId)
-            ? state.activeViewId
-            : todas[0]?.id || '',
-          viewsDirty: false,
-        };
-      });
-    });
-
-    // 6. Listen to App Configuration (Agency, Categories, Plans, Statuses)
-    const agencyConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'agencyConfig');
-    escutar(agencyConfigDocRef, 'configuração', (docSnap) => {
-      if (docSnap.exists()) {
-        const config = docSnap.data();
-        if (config) {
-          useAppStore.setState((state) => ({
-            agencyName: config.agencyName || state.agencyName,
-            categories: config.categories?.length ? config.categories : state.categories,
-            plans: config.plans?.length ? config.plans : state.plans,
-            statuses: config.statuses?.length ? config.statuses : state.statuses,
-            newsNiches: config.newsNiches?.length ? config.newsNiches : state.newsNiches,
-            promptFolders: config.promptFolders?.length ? config.promptFolders : state.promptFolders,
-            prompts: config.prompts?.length ? config.prompts : state.prompts,
-          }));
-        }
-      }
-    });
-
-    // 7. Listen to Shared Table View Configuration (Admin custom columns & widths)
-    const tableViewConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'tableViewConfig');
-    escutar(tableViewConfigDocRef, 'colunas', (docSnap) => {
-      if (docSnap.exists()) {
-        const config = docSnap.data() as TableViewConfig;
-        if (config && Array.isArray(config.visibleColumnIds)) {
-          useAppStore.setState({ tableViewConfig: config });
-        }
-      }
-    });
-
-    // Update cloud sync status
-    useAppStore.setState((s) => ({
-      cloudSync: {
-        ...s.cloudSync,
-        enabled: true,
-        connected: true,
-        lastSync: new Date().toISOString(),
-        backupCount: (s.cloudSync.backupCount || 0) + 1,
-      },
     }));
+
+    // Notas, prompts, visões e colunas são ferramentas da agência.
+    if (!clienteId) {
+      // 4. Listen to Notes collection
+      const notesCol = collection(db, COLLECTIONS.NOTES);
+      parar.push(escutar(notesCol, 'notas', (snapshot) => {
+        if (!snapshot.empty) {
+          const notes: NoteItem[] = [];
+          snapshot.forEach((docSnap) => {
+            const raw = docSnap.data() as any;
+            if (raw) {
+              notes.push({ id: docSnap.id, ...raw } as NoteItem);
+            }
+          });
+          useAppStore.setState({ notes });
+        }
+      }));
+
+      // 5. Listen to Admin System Prompts & Global Settings
+      const adminPromptsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'adminPrompts');
+      parar.push(escutar(adminPromptsDocRef, 'prompts', (docSnap) => {
+        if (docSnap.exists()) {
+          const cloudPrompts = docSnap.data() as AdminSystemPrompts;
+          if (cloudPrompts && (cloudPrompts.headlinePrompt || cloudPrompts.copyCaptionPrompt)) {
+            useAppStore.setState((state) => ({
+              adminPrompts: {
+                ...state.adminPrompts,
+                ...cloudPrompts,
+              },
+            }));
+          }
+        } else if (!isSyncingToCloud) {
+          // Seed default or local admin prompts to Firestore
+          const currentPrompts = useAppStore.getState().adminPrompts;
+          if (currentPrompts) {
+            syncAdminPromptsToCloud(currentPrompts);
+          }
+        }
+      }));
+
+      // 5b. Visões da Central de Tarefas publicadas para a equipe
+      const taskViewsDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'taskViews');
+      parar.push(escutar(taskViewsDocRef, 'visões', (docSnap) => {
+        if (!docSnap.exists()) return;
+        const dados = docSnap.data() as {
+          taskViews?: TaskView[];
+          customProperties?: CustomProperty[];
+        };
+        if (!dados?.taskViews?.length) return;
+
+        useAppStore.setState((state) => {
+          const publicadas = dados.taskViews || [];
+
+          // Visões que a pessoa criou e ainda não publicou continuam na máquina
+          // dela: receber a configuração da equipe não pode apagar rascunho.
+          //
+          // As visões de sistema são a exceção. "Todas as tarefas" e "Minhas
+          // tarefas" nascem de buildDefaultViews com id sorteado, diferente em
+          // cada navegador — então nunca batiam com as publicadas e sobravam
+          // como cópia. Quem abria o app via duas "Todas as tarefas" lado a
+          // lado. Quando a equipe publica as dela, as locais saem de cena.
+          const publicadasTemSistema = publicadas.some((p) => p.isSystem);
+          const locaisNaoPublicadas = state.taskViews.filter(
+            (v) =>
+              !v.isShared &&
+              !(v.isSystem && publicadasTemSistema) &&
+              !publicadas.some((p) => p.id === v.id)
+          );
+          const todas = [...publicadas, ...locaisNaoPublicadas];
+          return {
+            taskViews: todas,
+            customProperties: dados.customProperties || state.customProperties,
+            activeViewId: todas.some((v) => v.id === state.activeViewId)
+              ? state.activeViewId
+              : todas[0]?.id || '',
+            viewsDirty: false,
+          };
+        });
+      }));
+
+      // 7. Listen to Shared Table View Configuration (Admin custom columns & widths)
+      const tableViewConfigDocRef = doc(db, COLLECTIONS.APP_CONFIG, 'tableViewConfig');
+      parar.push(escutar(tableViewConfigDocRef, 'colunas', (docSnap) => {
+        if (docSnap.exists()) {
+          const config = docSnap.data() as TableViewConfig;
+          if (config && Array.isArray(config.visibleColumnIds)) {
+            useAppStore.setState({ tableViewConfig: config });
+          }
+        }
+      }));
+
+    }
   } catch (err) {
-    console.error('Error initializing Firestore sync:', err);
+    console.error('Erro ao iniciar a escuta da sessão:', err);
   }
 }
 
