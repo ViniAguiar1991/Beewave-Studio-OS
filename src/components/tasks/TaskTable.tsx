@@ -17,6 +17,7 @@ import {
 } from '../../lib/taskViews';
 import { formatFriendlyDate, isDateBeforeToday } from '../../utils/dateFormatter';
 import { EmptyState } from '../ui';
+import { useImpedirRecarga } from '../../lib/atualizacao';
 
 interface TaskTableProps {
   tasks: Task[];
@@ -541,6 +542,9 @@ const InlineText: React.FC<{
 }> = ({ value, prop, onChange }) => {
   const [draft, setDraft] = useState(value);
   React.useEffect(() => setDraft(value), [value]);
+  // Texto digitado e ainda não salvo (salva ao sair do campo) segura a
+  // atualização automática do app.
+  useImpedirRecarga(draft !== value);
 
   return (
     <input

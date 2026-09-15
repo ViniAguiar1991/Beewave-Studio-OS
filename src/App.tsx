@@ -16,7 +16,14 @@ import { GlobalTimerWidget } from './components/GlobalTimerWidget';
 import { Toast } from './components/ui';
 import { TrashView } from './components/TrashView';
 import { CampaignsView } from './components/CampaignsView';
+import { registrarTela, useTelaRestaurada } from './lib/atualizacao';
 import { LogIn, Sparkles, ShieldCheck, Eye, EyeOff, UserCheck, AlertCircle, LogOut } from 'lucide-react';
+
+/** O que a atualização automática guarda desta tela para devolver a pessoa ao mesmo lugar. */
+interface TelaDoApp {
+  currentTab?: string;
+  selectedClientId?: string | null;
+}
 
 export function App() {
   const currentUser = useCurrentUser();
@@ -35,9 +42,18 @@ export function App() {
   //
   // Os filtros da Central de Tarefas continuam lembrados entre sessões: são
   // preferência de trabalho, não ponto de partida.
-  const [currentTab, setCurrentTab] = useState<string>('inicio');
+  //
+  // A exceção é a recarga feita pela atualização de versão: ela devolve a
+  // pessoa à tela em que estava (src/lib/atualizacao.ts).
+  const telaRestaurada = useTelaRestaurada<TelaDoApp>('app');
+  const [currentTab, setCurrentTab] = useState<string>(() =>
+    typeof telaRestaurada?.currentTab === 'string' ? telaRestaurada.currentTab : 'inicio'
+  );
 
   const [selectedClientId, setSelectedClientId] = useState<string | null>(() => {
+    if (telaRestaurada && 'selectedClientId' in telaRestaurada) {
+      return typeof telaRestaurada.selectedClientId === 'string' ? telaRestaurada.selectedClientId : null;
+    }
     try {
       const savedClientId = localStorage.getItem('beewave_active_client_id');
       if (savedClientId) return savedClientId;
@@ -48,6 +64,11 @@ export function App() {
   const [activeWorkflowTaskId, setActiveWorkflowTaskId] = useState<string | null>(null);
   const [isCloudModalOpen, setIsCloudModalOpen] = useState(false);
   const [undoToast, setUndoToast] = useState<string | null>(null);
+
+  useEffect(
+    () => registrarTela('app', (): TelaDoApp => ({ currentTab, selectedClientId })),
+    [currentTab, selectedClientId]
+  );
 
 
   useEffect(() => {
@@ -128,6 +149,24 @@ export function App() {
       console.warn('Error reading URL params:', e);
     }
   }, [logout]);
+
+  // Com alguém já dentro, o convite na URL cumpriu o papel. Deixado lá, toda
+  // recarga (inclusive a da atualização de versão) refazia a checagem acima e
+  // podia deslogar quem entrou. Declarado depois da leitura dos parâmetros
+  // para ela ver o convite antes; a conferência na store evita limpar no
+  // mesmo instante em que a leitura acabou de deslogar alguém.
+  useEffect(() => {
+    if (!currentUser || !useAppStore.getState().currentUserId) return;
+    try {
+      const url = new URL(window.location.href);
+      const doConvite = ['email', 'portal', 'cliente', 'client'];
+      if (!doConvite.some((p) => url.searchParams.has(p))) return;
+      doConvite.forEach((p) => url.searchParams.delete(p));
+      window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      /* sem history: a URL só fica como está */
+    }
+  }, [currentUser?.id]);
 
   // Guard: if non-admin is in admin tab, redirect to inicio
   useEffect(() => {

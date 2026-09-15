@@ -5,6 +5,7 @@ import { Task, Client } from '../../types';
 import { formatLongDate, formatTimestamp } from '../../utils/dateFormatter';
 import { getPostDay, byPostDate, describeActivity } from './portalStatus';
 import { Button, EmptyState, PostListSkeleton, StatusPill } from '../ui';
+import { useImpedirRecarga } from '../../lib/atualizacao';
 
 type ApprovalFilter = 'aguardando' | 'ajuste' | 'aprovados' | 'todas';
 
@@ -41,6 +42,9 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
   const [filter, setFilter] = useState<ApprovalFilter>(initialFilter);
   const [adjustingId, setAdjustingId] = useState<string | null>(null);
   const [adjustmentText, setAdjustmentText] = useState('');
+  // Pedido de ajuste escrito e ainda não enviado segura a atualização
+  // automática do app: recarregar apagaria o texto do cliente.
+  useImpedirRecarga(adjustmentText.trim() !== '');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [slideByTask, setSlideByTask] = useState<Record<string, number>>({});
 

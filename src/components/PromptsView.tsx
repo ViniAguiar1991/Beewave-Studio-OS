@@ -3,6 +3,7 @@ import { Check, Copy, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
 import { useAppStore } from '../store';
 import { PromptItem } from '../types';
 import { Button, EmptyState, Toast } from './ui';
+import { useImpedirRecarga } from '../lib/atualizacao';
 
 /**
  * Prompts — os comandos que a agência já validou.
@@ -385,6 +386,9 @@ const FormularioPrompt: React.FC<{
   const [body, setBody] = useState(prompt?.body || '');
   const [folderId, setFolderId] = useState(prompt?.folderId || pastaPadrao);
   useEscape(onClose);
+  // Editor aberto segura a atualização automática do app: recarregar apagaria
+  // o prompt em edição.
+  useImpedirRecarga(true);
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

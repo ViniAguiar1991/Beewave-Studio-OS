@@ -154,6 +154,19 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   // Com a tarefa aberta o app não recarrega sozinho para atualizar de versão.
   useEffect(() => impedirRecarga(), []);
 
+  // Tarefa excluída (por um colega, ou em outra aba) com o modal montado:
+  // fecha. Sem isso o modal ficava montado sem nada na tela, segurando a trava
+  // acima para sempre. A folga cobre o instante em que um snapshot da nuvem
+  // anterior à criação chega depois dela e a tarefa nova some e volta.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const tarefaSumiu = !task;
+  useEffect(() => {
+    if (!tarefaSumiu) return;
+    const relogio = window.setTimeout(() => onCloseRef.current(), 1500);
+    return () => window.clearTimeout(relogio);
+  }, [tarefaSumiu]);
+
   // Live editing presence lock
   useEffect(() => {
     if (!task) return;

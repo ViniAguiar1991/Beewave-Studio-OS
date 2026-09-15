@@ -214,6 +214,12 @@ async function arteInteiraNaNuvem(
 const enviando = new Map<string, Promise<void>>();
 
 /**
+ * Há arte sendo conferida ou subindo agora? A atualização automática do app
+ * espera terminar: recarregar no meio deixaria a arte pela metade na nuvem.
+ */
+export const haEnvioDeArteEmAndamento = (): boolean => enviando.size > 0;
+
+/**
  * Garante que a arte está inteira na nuvem, subindo só se faltar.
  *
  * `soSeConferir`: sem conseguir conferir (sem internet), não sobe. É o modo do

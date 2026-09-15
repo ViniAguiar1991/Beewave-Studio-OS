@@ -14,6 +14,7 @@ import { ClientPostModal } from './client-portal/ClientPostModal';
 import { ClientSuggestionPanel, SuggestionDraft } from './client-portal/ClientSuggestionPanel';
 import { ErrorState, Toast } from './ui';
 import { needsClientDecision, isBeingRevised, getPostDay, byPostDate } from './client-portal/portalStatus';
+import { registrarTela, useTelaRestaurada } from '../lib/atualizacao';
 
 interface ClientPortalViewProps {
   initialClientId?: string | null;
@@ -83,7 +84,12 @@ export const ClientPortalView: React.FC<ClientPortalViewProps> = ({
 
   // O portal sempre abre no Resumo, pela mesma razão do app: o cliente
   // começa pelo retrato da situação, não pela última aba que ficou aberta.
-  const [activeTab, setActiveTab] = useState<PortalTabKey>('resumo');
+  // Só a recarga da atualização de versão devolve à aba em que estava.
+  const telaRestaurada = useTelaRestaurada<{ activeTab?: PortalTabKey }>('portal');
+  const [activeTab, setActiveTab] = useState<PortalTabKey>(
+    () => (typeof telaRestaurada?.activeTab === 'string' ? telaRestaurada.activeTab : 'resumo')
+  );
+  useEffect(() => registrarTela('portal', () => ({ activeTab })), [activeTab]);
 
   const [approvalFilter, setApprovalFilter] = useState<'aguardando' | 'ajuste'>('aguardando');
   const [inspectingId, setInspectingId] = useState<string | null>(null);

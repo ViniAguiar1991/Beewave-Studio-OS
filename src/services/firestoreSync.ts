@@ -5,6 +5,7 @@ import {
   doc,
   setDoc,
   deleteDoc,
+  updateDoc,
   getDocs,
   onSnapshot,
   query,
@@ -28,6 +29,8 @@ let isSyncingToCloud = false;
 const gravar = (ref: any, dados: any, opcoes?: any): Promise<void> =>
   rastrearEnvio(opcoes ? setDoc(ref, dados, opcoes) : setDoc(ref, dados));
 const apagar = (ref: any): Promise<void> => rastrearEnvio(deleteDoc(ref));
+/** Altera campos de um documento que já existe; falha (not-found) em vez de criar. */
+const atualizar = (ref: any, dados: any): Promise<void> => rastrearEnvio(updateDoc(ref, dados));
 
 /**
  * onSnapshot que volta sozinho.
@@ -291,6 +294,10 @@ export function iniciarSyncDaSessao(usuario: { id: string; role: string; clientI
       const tasks: Task[] = [];
       snapshot.forEach((docSnap) => {
         const raw = docSnap.data() as any;
+        // Documento sem título, cliente e data de criação não é tarefa: é o
+        // fantasma que a marca de presença (`editingBy`) recriava depois de
+        // uma exclusão. Aceitá-lo trazia a tarefa apagada de volta, vazia.
+        if (raw && !raw.title && !raw.clientId && !raw.createdAt) return;
         if (raw) {
           const localMatch = existingTasks.find((et) => et.id === docSnap.id);
           // Preserve any in-memory dataUrls already loaded for files
@@ -374,7 +381,9 @@ export function iniciarSyncDaSessao(usuario: { id: string; role: string; clientI
               },
             }));
           }
-        } else if (!isSyncingToCloud) {
+        } else if (!docSnap.metadata.fromCache && !isSyncingToCloud) {
+          // Inexistente no cache não quer dizer inexistente na nuvem: semear
+          // nessa hora gravaria os prompts deste navegador por cima da equipe.
           // Seed default or local admin prompts to Firestore
           const currentPrompts = useAppStore.getState().adminPrompts;
           if (currentPrompts) {
@@ -766,14 +775,15 @@ export async function syncTaskLiveEditingToCloud(taskId: string, editingBy: Task
   if (!taskId) return;
   try {
     const taskRef = doc(db, COLLECTIONS.TASKS, taskId);
-    await gravar(
-      taskRef,
-      {
-        editingBy: editingBy ? sanitizeForFirestore(editingBy) : null,
-      },
-      { merge: true }
-    );
-  } catch (err) {
+    // updateDoc e não setDoc com merge: se a tarefa foi excluída (por um
+    // colega, ou logo antes de o modal fechar), o merge recriava o documento
+    // só com `editingBy`. O updateDoc falha em documento inexistente.
+    await atualizar(taskRef, {
+      editingBy: editingBy ? sanitizeForFirestore(editingBy) : null,
+    });
+  } catch (err: any) {
+    // Tarefa que não existe mais: não há presença a marcar.
+    if (err?.code === 'not-found') return;
     console.error(`Error updating live editing for task ${taskId}:`, err);
   }
 }
@@ -784,6 +794,9 @@ export async function syncTaskLiveEditingToCloud(taskId: string, editingBy: Task
 export async function deleteTaskFromCloud(taskId: string) {
   if (isCloudSyncDisabled()) return;
   if (!taskId) return;
+  // Uma edição agendada (3 s) desta tarefa, se disparasse depois da exclusão,
+  // gravaria a tarefa inteira de volta.
+  cancelarAgendamento(taskId);
   try {
     const task = useAppStore.getState().tasks.find((t) => t.id === taskId);
     if (task?.files) {
@@ -836,6 +849,9 @@ export async function deleteClientFromCloud(clientId: string) {
 export async function pushFullStoreToCloud(): Promise<boolean> {
   if (isCloudSyncDisabled()) return false;
   isSyncingToCloud = true;
+  // Pendente do começo ao fim: entre uma gravação e a próxima o contador
+  // zerava, e a atualização automática do app podia recarregar no meio.
+  inicioDeEnvio();
   const state = useAppStore.getState();
   try {
     // 1. Sync Users
@@ -898,14 +914,17 @@ export async function pushFullStoreToCloud(): Promise<boolean> {
     return false;
   } finally {
     isSyncingToCloud = false;
+    fimDeEnvio();
   }
 }
 
+// Semeaduras: como no envio completo, pendentes do começo ao fim do laço.
 async function seedInitialUsersToCloud() {
   if (isCloudSyncDisabled()) return;
   const state = useAppStore.getState();
   if (!state.users || state.users.length === 0) return;
   isSyncingToCloud = true;
+  inicioDeEnvio();
   try {
     for (const user of state.users) {
       const ref = doc(db, COLLECTIONS.USERS, user.id);
@@ -915,6 +934,7 @@ async function seedInitialUsersToCloud() {
     console.error('Error seeding users:', err);
   } finally {
     isSyncingToCloud = false;
+    fimDeEnvio();
   }
 }
 
@@ -923,6 +943,7 @@ async function seedInitialClientsToCloud() {
   const state = useAppStore.getState();
   if (!state.clients || state.clients.length === 0) return;
   isSyncingToCloud = true;
+  inicioDeEnvio();
   try {
     for (const client of state.clients) {
       const ref = doc(db, COLLECTIONS.CLIENTS, client.id);
@@ -932,6 +953,7 @@ async function seedInitialClientsToCloud() {
     console.error('Error seeding clients:', err);
   } finally {
     isSyncingToCloud = false;
+    fimDeEnvio();
   }
 }
 
@@ -940,6 +962,7 @@ async function seedInitialCampaignsToCloud() {
   const state = useAppStore.getState();
   if (!state.campaigns || state.campaigns.length === 0) return;
   isSyncingToCloud = true;
+  inicioDeEnvio();
   try {
     for (const campaign of state.campaigns) {
       const ref = doc(db, COLLECTIONS.CAMPAIGNS, campaign.id);
@@ -949,6 +972,7 @@ async function seedInitialCampaignsToCloud() {
     console.error('Erro ao semear campanhas:', err);
   } finally {
     isSyncingToCloud = false;
+    fimDeEnvio();
   }
 }
 
@@ -957,6 +981,7 @@ async function seedInitialTasksToCloud() {
   const state = useAppStore.getState();
   if (!state.tasks || state.tasks.length === 0) return;
   isSyncingToCloud = true;
+  inicioDeEnvio();
   try {
     for (const task of state.tasks) {
       const ref = doc(db, COLLECTIONS.TASKS, task.id);
@@ -966,5 +991,6 @@ async function seedInitialTasksToCloud() {
     console.error('Error seeding tasks:', err);
   } finally {
     isSyncingToCloud = false;
+    fimDeEnvio();
   }
 }

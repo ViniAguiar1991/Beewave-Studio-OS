@@ -2332,6 +2332,9 @@ export const useAppStore = create<BeeWaveState>()(
         if (updated) syncTaskToCloud(updated);
       },
       setTaskLiveEditing: (taskId, user) => {
+        // Tarefa já excluída: marcar presença na nuvem recriaria o documento
+        // só com `editingBy` — a tarefa apagada voltava como fantasma.
+        if (!get().tasks.some((t) => t.id === taskId)) return;
         const liveEditing: TaskLiveEditing = {
           userId: user.id,
           userName: user.name,
@@ -2346,6 +2349,9 @@ export const useAppStore = create<BeeWaveState>()(
         syncTaskLiveEditingToCloud(taskId, liveEditing);
       },
       clearTaskLiveEditing: (taskId) => {
+        // Mesmo motivo: fechar o modal de uma tarefa recém-excluída não pode
+        // gravar a presença de volta na nuvem.
+        if (!get().tasks.some((t) => t.id === taskId)) return;
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === taskId ? { ...t, editingBy: null } : t

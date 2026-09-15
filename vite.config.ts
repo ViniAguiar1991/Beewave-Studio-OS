@@ -3,9 +3,12 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-// Identidade da publicação. Na Vercel é o commit; localmente, o horário do build.
+// Identidade da publicação. Na Vercel é o id da publicação (o commit sozinho
+// repetia a versão quando o mesmo commit era publicado de novo, e as abas
+// velhas não percebiam); localmente, o horário do build.
 // O app compara com /versao.json para saber quando recarregar (src/lib/atualizacao.ts).
-const versaoDoApp = process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now());
+const versaoDoApp =
+  process.env.VERCEL_DEPLOYMENT_ID || process.env.VERCEL_GIT_COMMIT_SHA || String(Date.now());
 
 export default defineConfig(() => {
   return {

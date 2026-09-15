@@ -6,6 +6,7 @@ import { getColor, hexToColorKey } from '../lib/taskViews';
 import { formatFriendlyDate } from '../utils/dateFormatter';
 import { FolderCard, FolderAction } from './FolderCard';
 import { Button, EmptyState, BlockHeader } from './ui';
+import { useImpedirRecarga } from '../lib/atualizacao';
 
 interface CampaignsViewProps {
   onSelectTask: (taskId: string) => void;
@@ -362,6 +363,9 @@ const FormularioCampanha: React.FC<{
   const [startDate, setStartDate] = useState(campanha?.startDate || '');
   const [endDate, setEndDate] = useState(campanha?.endDate || '');
   const [status, setStatus] = useState<Campaign['status']>(campanha?.status || 'planejamento');
+  // Formulário aberto segura a atualização automática do app: recarregar
+  // apagaria o que foi digitado.
+  useImpedirRecarga(true);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();

@@ -1,6 +1,8 @@
 node_modules/
 build/
 dist/
+# Build de pré-visualização com a nuvem desligada (.claude/launch.json)
+dist-preview/
 coverage/
 .DS_Store
 *.log

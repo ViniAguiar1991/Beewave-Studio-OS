@@ -4,6 +4,7 @@ import { Client, ContractService } from '../types';
 import { useAppStore } from '../store';
 import { previstoNaSemana } from '../lib/weekPlan';
 import { Button, EmptyState, BlockHeader, Toast } from './ui';
+import { useImpedirRecarga } from '../lib/atualizacao';
 
 interface ClientRecurrenceTabProps {
   client: Client;
@@ -217,6 +218,9 @@ const FormularioServico: React.FC<{
   const [formato, setFormato] = useState('Post único');
   const [responsavel, setResponsavel] = useState(equipe[0]?.id || '');
   const [dias, setDias] = useState<number[]>([1, 3, 5]);
+  // Formulário aberto segura a atualização automática do app: recarregar
+  // apagaria o que foi digitado.
+  useImpedirRecarga(true);
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
