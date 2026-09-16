@@ -134,17 +134,19 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
   };
 
   return (
-    <header className="w-full border-b border-slate-200 dark:border-slate-800">
+    <header className="w-full">
       {/* Barra utilitária: contexto de sessão, nunca conteúdo. */}
+      <div className="w-full bg-slate-950">
       <div className="mx-auto max-w-6xl px-5 sm:px-8 h-14 flex items-center justify-between gap-4">
         {isClientLocked ? (
-          <span className="t-meta text-slate-500 dark:text-slate-400">
+          <span className="inline-flex items-center gap-2.5 t-ui text-white">
+            <MarcaBeewave />
             Portal Beewave
           </span>
         ) : (
           <button
             onClick={onBackToApp}
-            className="group inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+            className="group inline-flex items-center gap-1.5 t-ui text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
             <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
             Voltar ao Studio
@@ -154,13 +156,11 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
         <div className="flex items-center gap-5">
           {!isClientLocked && allClients.length > 0 && (
             <label className="flex items-center gap-2 t-meta">
-              <span className="text-slate-500 dark:text-slate-400 hidden sm:inline">
-                Visualizando como
-              </span>
+              <span className="text-slate-400 hidden sm:inline">Visualizando como</span>
               <select
                 value={client?.id || ''}
                 onChange={(e) => onSwitchClient(e.target.value)}
-                className="bg-transparent font-medium text-slate-900 dark:text-white border-b border-slate-300 dark:border-slate-700 pb-0.5 focus:outline-none focus:border-slate-900 dark:focus:border-white cursor-pointer"
+                className="bg-transparent font-medium text-white border-b border-slate-600 pb-0.5 focus:outline-none focus:border-white cursor-pointer"
               >
                 {allClients.map((c) => (
                   <option key={c.id} value={c.id} className="dark:bg-slate-900">
@@ -177,8 +177,8 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
               aria-pressed={personalizando}
               className={`inline-flex items-center gap-1.5 t-ui transition-colors cursor-pointer ${
                 personalizando
-                  ? 'text-amber-700 dark:text-amber-400 font-medium'
-                  : 'text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white'
+                  ? 'text-amber-400 font-medium'
+                  : 'text-slate-300 hover:text-white'
               }`}
             >
               <SlidersHorizontal className="h-3.5 w-3.5" />
@@ -188,12 +188,12 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
 
           <button
             onClick={handleCopyPortalLink}
-            className="inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 t-ui text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
             {copiedLink ? (
               <>
-                <Check className="h-3.5 w-3.5 text-emerald-600" />
-                <span className="text-emerald-700 dark:text-emerald-400">Link copiado</span>
+                <Check className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Link copiado</span>
               </>
             ) : (
               <>
@@ -205,14 +205,17 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
 
           <button
             onClick={onLogout}
-            className="inline-flex items-center gap-1.5 t-ui text-slate-600 hover:text-slate-950 dark:text-slate-400 dark:hover:text-white transition-colors cursor-pointer"
+            className="inline-flex items-center gap-1.5 t-ui text-slate-300 hover:text-white transition-colors cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5" />
             Sair
           </button>
         </div>
       </div>
+      </div>
 
+      {/* Faixa de identidade: separa o espaço do cliente do conteúdo abaixo. */}
+      <div className="w-full bg-slate-100 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
       {/* Identidade do cliente + situação em uma frase. */}
       <div className="mx-auto max-w-6xl px-5 sm:px-8 pt-7 pb-6">
         <div className="flex items-center gap-4">
@@ -314,9 +317,24 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
           );
         })}
       </nav>
+      </div>
     </header>
   );
 };
+
+/** Marca da Beewave na barra do portal: hexágono com o recorte claro. */
+const MarcaBeewave: React.FC = () => (
+  <svg viewBox="0 0 24 26" aria-hidden="true" className="h-5 w-5 shrink-0">
+    <path
+      d="M12 0.8 22.4 6.9v12.2L12 25.2 1.6 19.1V6.9z"
+      fill="#F9AE3F"
+    />
+    <path
+      d="M13.6 5.6 19 8.8a1.6 1.6 0 0 1 .8 1.4v6.1a1 1 0 0 1-1.5.9l-5.4-3.2a1.6 1.6 0 0 1-.8-1.4V6.5a1 1 0 0 1 1.5-.9z"
+      fill="#ffffff"
+    />
+  </svg>
+);
 
 /** Logo do cliente quando existe; iniciais como reserva estável. */
 const ClientMark: React.FC<{ client?: Client }> = ({ client }) => {
