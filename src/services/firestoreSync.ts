@@ -343,6 +343,15 @@ export function iniciarSyncDaSessao(usuario: { id: string; role: string; clientI
         });
         useAppStore.setState({ tasks });
 
+        // Tarefa que não veio mais da nuvem foi excluída por alguém: uma
+        // edição agendada aqui a recriaria daqui a 3 segundos.
+        if (!clienteId && !snapshot.metadata.fromCache) {
+          const naNuvem = new Set(tasks.map((t) => t.id));
+          for (const id of [...agendadas.keys()]) {
+            if (!naNuvem.has(id)) cancelarAgendamento(id);
+          }
+        }
+
         // Com a lista da nuvem em mãos, confere as artes deste navegador e
         // sobe as que ficaram pela metade. Uma vez por sessão, sem pressa.
         if (!snapshot.metadata.fromCache && !clienteId) {
@@ -686,6 +695,10 @@ export function agendarEnvioDaTarefa(task: Task, atrasoMs = 3000) {
     if (!agendada) return;
     agendadas.delete(task.id);
     fimDeEnvio();
+    // A tarefa pode ter sido excluída por um colega enquanto a edição
+    // esperava a pausa na digitação. Gravar agora recriaria a tarefa
+    // apagada para todo mundo.
+    if (!useAppStore.getState().tasks.some((t) => t.id === agendada.tarefa.id)) return;
     void syncTaskToCloud(agendada.tarefa);
   }, atrasoMs);
   agendadas.set(task.id, { tarefa: task, relogio });
@@ -693,10 +706,12 @@ export function agendarEnvioDaTarefa(task: Task, atrasoMs = 3000) {
 
 /** Envia agora tudo que estava esperando a pausa na digitação. */
 export function enviarTarefasAgendadas() {
+  const existentes = new Set(useAppStore.getState().tasks.map((t) => t.id));
   for (const [id, { tarefa, relogio }] of agendadas) {
     clearTimeout(relogio);
     agendadas.delete(id);
     fimDeEnvio();
+    if (!existentes.has(id)) continue;
     void syncTaskToCloud(tarefa);
   }
 }
