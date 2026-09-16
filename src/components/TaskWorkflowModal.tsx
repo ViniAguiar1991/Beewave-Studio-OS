@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { uploadTaskFileToCloud, loadTaskFileDataUrl, reenviarArte } from '../services/taskFileCloudSync';
+import { enviarArteParaStorage } from '../services/storageArtes';
 import { esquecerArte } from '../hooks/useTaskFileSrc';
 import { impedirRecarga } from '../lib/atualizacao';
 import { ArteDaTarefa, ehArteExibivel } from './ArteDaTarefa';
@@ -433,6 +434,23 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
     setTimeout(() => setCopiedCaption(false), 2000);
   };
 
+  /**
+   * A arte chegou ao Storage: guarda o endereço na tarefa.
+   *
+   * A partir daqui a arte existe para todo mundo — a gravação leva só o link,
+   * não a imagem, então chega na hora para quem está com a tarefa aberta.
+   */
+  const aplicarEnderecoDaArte = (fileId: string, url: string, storagePath: string) => {
+    if (!task) return;
+    setFiles((atuais) => {
+      const proximos = atuais.map((f) => (f.id === fileId ? { ...f, url, storagePath } : f));
+      // Fora do fluxo de renderização: alterar a store aqui dentro avisaria o
+      // React no meio da atualização do estado deste componente.
+      queueMicrotask(() => updateTask(task.id, { files: proximos }));
+      return proximos;
+    });
+  };
+
   // File Upload (Preserves 100% original uncompressed quality)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
@@ -460,10 +478,15 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
         };
         newFiles.push(newFileItem);
 
-        // Upload to cloud in background
-        uploadTaskFileToCloud(task.id, newFileItem).catch((err) =>
-          console.warn('Background upload chunk error:', err)
-        );
+        // A arte sobe inteira para o Storage e, quando chega, o endereço dela
+        // entra na tarefa — é isso que os colegas recebem, na hora.
+        enviarArteParaStorage(task.id, newFileItem, file)
+          .then(({ url, storagePath }) => aplicarEnderecoDaArte(newFileItem.id, url, storagePath))
+          .catch((err) => {
+            console.warn('Envio da arte para o Storage:', err);
+            // Sem Storage, o caminho antigo ainda guarda a arte.
+            uploadTaskFileToCloud(task.id, newFileItem).catch(() => {});
+          });
       } catch (err) {
         console.error('Error reading file:', err);
       }
@@ -509,9 +532,12 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
       dataUrl,
       uploadedAt: new Date().toISOString(),
     };
-    // O envio entra primeiro, para a gravação da tarefa logo abaixo reconhecer
-    // que essa arte já está subindo e não mandar de novo.
-    reenviarArte(task.id, nova).catch((err) => console.warn('Reenvio da arte:', err));
+    enviarArteParaStorage(task.id, nova, escolhido)
+      .then(({ url, storagePath }) => aplicarEnderecoDaArte(nova.id, url, storagePath))
+      .catch((err) => {
+        console.warn('Reenvio da arte para o Storage:', err);
+        reenviarArte(task.id, nova).catch(() => {});
+      });
     esquecerArte(alvo.id);
     const nextFiles = files.map((f) => (f.id === alvo.id ? nova : f));
     setFiles(nextFiles);

@@ -735,7 +735,8 @@ export async function syncTaskToCloud(task: Task) {
     // If task has files with high-res dataUrls, upload files to Firestore task_files in chunks
     // and strip large dataUrl from the main document to ensure it stays well under the 1MB Firestore limit
     const sanitizedFiles = (task.files || []).map((file) => {
-      if (file.dataUrl && file.dataUrl.length > 50) {
+      // Arte que já está no Storage não vai em pedaços para o banco.
+      if (!file.url && file.dataUrl && file.dataUrl.length > 50) {
         // Só sobe se a nuvem ainda não tiver essa arte inteira.
         garantirArquivoNaNuvem(task.id, file).catch((err) =>
           console.warn(`Background chunk upload error for ${file.name}:`, err)
@@ -747,6 +748,7 @@ export async function syncTaskToCloud(task: Task) {
         type: file.type || 'image/jpeg',
         size: file.size || 0,
         url: file.url || null,
+        storagePath: file.storagePath || null,
         uploadedAt: file.uploadedAt || new Date().toISOString(),
         // Keep small icons/SVGs in doc, omit large base64 strings so main doc is < 5KB
         dataUrl: file.dataUrl && file.dataUrl.length < 35000 ? file.dataUrl : '',
@@ -754,7 +756,7 @@ export async function syncTaskToCloud(task: Task) {
     });
 
     const sanitizedBriefingFiles = (task.briefingFiles || []).map((file) => {
-      if (file.dataUrl && file.dataUrl.length > 50) {
+      if (!file.url && file.dataUrl && file.dataUrl.length > 50) {
         garantirArquivoNaNuvem(task.id, file).catch((err) =>
           console.warn(`Background chunk upload error for briefing file ${file.name}:`, err)
         );
@@ -765,6 +767,7 @@ export async function syncTaskToCloud(task: Task) {
         type: file.type || 'application/octet-stream',
         size: file.size || 0,
         url: file.url || null,
+        storagePath: file.storagePath || null,
         uploadedAt: file.uploadedAt || new Date().toISOString(),
         dataUrl: file.dataUrl && file.dataUrl.length < 35000 ? file.dataUrl : '',
       };

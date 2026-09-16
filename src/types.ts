@@ -198,6 +198,8 @@ export interface TaskFile {
   size?: number;
   dataUrl?: string;
   url?: string;
+  /** Onde a arte está no Storage. Quando existe, a arte não vai em pedaços no banco. */
+  storagePath?: string;
   uploadedAt?: string;
 }
 
