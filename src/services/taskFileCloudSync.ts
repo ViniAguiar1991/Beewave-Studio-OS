@@ -212,12 +212,33 @@ async function arteInteiraNaNuvem(
 
 /** Envios em andamento, para a mesma arte não subir duas vezes ao mesmo tempo. */
 const enviando = new Map<string, Promise<void>>();
+/** Quando cada envio começou, para a espera não virar espera eterna. */
+const inicioDoEnvio = new Map<string, number>();
+
+/**
+ * Tempo que vale a pena esperar por uma arte antes de deixar o app recarregar.
+ *
+ * Com a cota estourada ou sem internet, a gravação do Firestore nunca termina
+ * e o envio ficaria "em andamento" até a aba fechar — travando para sempre a
+ * atualização automática, que é justamente o que tira a aba da versão velha.
+ * Passado esse tempo, a arte já está guardada no IndexedDB deste navegador
+ * (enviarArquivo grava lá antes de falar com a nuvem) e os lotes já foram
+ * entregues à fila do Firestore, que sobrevive à recarga. Se ainda assim ela
+ * não subir, o reparo da próxima abertura manda de novo.
+ */
+const ESPERA_MAXIMA_POR_ARTE_MS = 30_000;
 
 /**
  * Há arte sendo conferida ou subindo agora? A atualização automática do app
  * espera terminar: recarregar no meio deixaria a arte pela metade na nuvem.
  */
-export const haEnvioDeArteEmAndamento = (): boolean => enviando.size > 0;
+export const haEnvioDeArteEmAndamento = (): boolean => {
+  const agora = Date.now();
+  for (const inicio of inicioDoEnvio.values()) {
+    if (agora - inicio < ESPERA_MAXIMA_POR_ARTE_MS) return true;
+  }
+  return false;
+};
 
 /**
  * Garante que a arte está inteira na nuvem, subindo só se faltar.
@@ -265,10 +286,14 @@ export function garantirArquivoNaNuvem(
     if (!idDaTarefa) return;
     await enviarArquivo(idDaTarefa, file);
   })().finally(() => {
-    if (enviando.get(file.id) === tarefa) enviando.delete(file.id);
+    if (enviando.get(file.id) === tarefa) {
+      enviando.delete(file.id);
+      inicioDoEnvio.delete(file.id);
+    }
   });
 
   enviando.set(file.id, tarefa);
+  inicioDoEnvio.set(file.id, Date.now());
   return tarefa;
 }
 
@@ -286,9 +311,13 @@ export function reenviarArte(taskId: string, file: TaskFile): Promise<void> {
   // Registrado como envio em andamento: a gravação da tarefa que vem logo
   // depois reconhece e não sobe a mesma arte uma segunda vez.
   const tarefa = enviarArquivo(taskId, file).finally(() => {
-    if (enviando.get(file.id) === tarefa) enviando.delete(file.id);
+    if (enviando.get(file.id) === tarefa) {
+      enviando.delete(file.id);
+      inicioDoEnvio.delete(file.id);
+    }
   });
   enviando.set(file.id, tarefa);
+  inicioDoEnvio.set(file.id, Date.now());
   return tarefa;
 }
 
