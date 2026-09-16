@@ -107,19 +107,26 @@ const desconfirmar = (fileId: string) => {
  * lotes com o cabeçalho no último). O cabeçalho é a prova de que a arte está
  * completa: se ele existe, os pedaços existem.
  */
-async function enviarArquivo(taskId: string, file: TaskFile): Promise<void> {
+async function enviarArquivo(
+  taskId: string,
+  file: TaskFile,
+  opcoes: { jaGuardada?: boolean } = {}
+): Promise<void> {
   if (!file || !file.id) return;
 
   if (file.dataUrl && file.dataUrl.startsWith('data:')) {
     // O cache local vale mesmo com a nuvem desligada: é o que faz a arte
-    // reaparecer na hora depois de recarregar.
-    await saveFileToLocalDb(file.id, file.dataUrl, {
-      name: file.name,
-      type: file.type,
-      size: file.size,
-      taskId,
-    });
-    marcarArteGuardada(file.id);
+    // reaparecer na hora depois de recarregar. Quem já guardou avisa, para a
+    // mesma arte não ser escrita duas vezes no banco do navegador.
+    if (!opcoes.jaGuardada) {
+      await saveFileToLocalDb(file.id, file.dataUrl, {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        taskId,
+      });
+      marcarArteGuardada(file.id);
+    }
 
     if (isCloudSyncDisabled()) return;
 
@@ -274,12 +281,16 @@ export function garantirArquivoNaNuvem(
     // pendurada (rede que responde mas não entrega) e, até a arte estar no
     // IndexedDB, ela só existe na memória desta aba.
     if (temConteudo) {
-      await saveFileToLocalDb(file.id, file.dataUrl!, {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        taskId,
-      });
+      // No reparo o conteúdo veio do próprio banco local: guardar de novo
+      // seria reescrever dezenas de MB à toa na abertura do app.
+      if (!opcoes.soSeConferir) {
+        await saveFileToLocalDb(file.id, file.dataUrl!, {
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          taskId,
+        });
+      }
       marcarArteGuardada(file.id);
     }
 
@@ -290,12 +301,6 @@ export function garantirArquivoNaNuvem(
         idDaTarefa = idDaTarefa || conferencia.taskId;
         if (conferencia.inteira) {
           confirmar(file.id);
-          await saveFileToLocalDb(file.id, file.dataUrl!, {
-            name: file.name,
-            type: file.type,
-            size: file.size,
-            taskId: idDaTarefa,
-          });
           return;
         }
       } catch {
@@ -306,7 +311,7 @@ export function garantirArquivoNaNuvem(
     }
 
     if (!idDaTarefa) return;
-    await enviarArquivo(idDaTarefa, file);
+    await enviarArquivo(idDaTarefa, file, { jaGuardada: temConteudo });
   })().finally(() => {
     if (enviando.get(file.id) === tarefa) {
       enviando.delete(file.id);
