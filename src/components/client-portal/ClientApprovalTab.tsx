@@ -159,9 +159,15 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
                   <button
                     onClick={() => onOpenTask(task)}
                     aria-label={`Ampliar arte de ${task.title}`}
-                    className="relative block w-full aspect-square rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group cursor-pointer"
+                    className="relative block w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group cursor-pointer"
                   >
-                    <PostArte file={activeFile} taskId={task.id} alt={task.title} className="h-full w-full" />
+                    <PostArte
+                      file={activeFile}
+                      taskId={task.id}
+                      alt={task.title}
+                      className="w-full"
+                      manterProporcao
+                    />
                     <span className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/25 transition-colors duration-150 grid place-items-center">
                       <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 inline-flex items-center gap-1.5 t-meta font-medium text-white">
                         <Maximize2 className="h-3.5 w-3.5" />

@@ -250,7 +250,20 @@ export const PostImage: React.FC<{
   carregando?: boolean;
   /** A tarefa tem arte, mas ela não foi encontrada em lugar nenhum. */
   indisponivel?: boolean;
-}> = ({ src, alt, className = '', carregando = false, indisponivel = false }) => {
+  /**
+   * Mostra a arte na proporção em que ela foi enviada, sem cortar.
+   * O cliente precisa aprovar o que vai ao ar: uma 16:9 recortada em quadrado
+   * esconde justamente as bordas que ele deveria conferir.
+   */
+  manterProporcao?: boolean;
+}> = ({
+  src,
+  alt,
+  className = '',
+  carregando = false,
+  indisponivel = false,
+  manterProporcao = false,
+}) => {
   const imgRef = React.useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = React.useState(false);
   const [failed, setFailed] = React.useState(false);
@@ -291,7 +304,11 @@ export const PostImage: React.FC<{
   }
 
   return (
-    <div className={`relative overflow-hidden bg-slate-100 dark:bg-slate-900 ${className}`}>
+    <div
+      className={`relative overflow-hidden bg-slate-100 dark:bg-slate-900 ${
+        manterProporcao ? 'min-h-40' : ''
+      } ${className}`}
+    >
       {!loaded && !failed && <Shimmer className="absolute inset-0 rounded-none" />}
       {failed ? (
         <div className="absolute inset-0 grid place-items-center text-slate-400 dark:text-slate-600">
@@ -305,9 +322,9 @@ export const PostImage: React.FC<{
           loading="lazy"
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
-          className={`h-full w-full object-cover transition-opacity duration-300 ${
-            loaded ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`${
+            manterProporcao ? 'w-full h-auto object-contain' : 'h-full w-full object-cover'
+          } transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
     </div>

@@ -85,7 +85,9 @@ export const PostArte: React.FC<{
   taskId?: string;
   alt: string;
   className?: string;
-}> = ({ file, taskId, alt, className }) => {
+  /** Mostra a arte na proporção enviada, sem recortar. */
+  manterProporcao?: boolean;
+}> = ({ file, taskId, alt, className, manterProporcao }) => {
   const { src, carregando, indisponivel } = useTaskFileSrc(file, taskId);
   return (
     <PostImage
@@ -94,6 +96,7 @@ export const PostArte: React.FC<{
       className={className}
       carregando={carregando}
       indisponivel={indisponivel}
+      manterProporcao={manterProporcao}
     />
   );
 };

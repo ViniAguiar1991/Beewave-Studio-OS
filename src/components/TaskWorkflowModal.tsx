@@ -435,6 +435,22 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   };
 
   /**
+   * O que o cliente pediu na última recusa.
+   *
+   * O texto já era gravado na atividade da tarefa e aparecia só no portal: aqui
+   * dentro via-se "alterar" sem dizer o quê. Some assim que uma nova versão é
+   * enviada — aí o pedido já foi respondido.
+   */
+  const pedidoDoCliente = React.useMemo(() => {
+    const atividade = task?.activity || [];
+    const pedido = [...atividade].reverse().find((a) => a.type === 'client_change');
+    if (!pedido) return null;
+    const reenvio = [...atividade].reverse().find((a) => a.type === 'resubmit');
+    if (reenvio && (reenvio.ts || '') > (pedido.ts || '')) return null;
+    return pedido;
+  }, [task?.activity]);
+
+  /**
    * A arte chegou ao Storage: guarda o endereço na tarefa.
    *
    * A partir daqui a arte existe para todo mundo — a gravação leva só o link,
@@ -924,6 +940,28 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
                   </select>
                 </div>
               </div>
+
+              {pedidoDoCliente && (
+                <div className="rounded-lg border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 p-3.5">
+                  <p className="t-label text-amber-800 dark:text-amber-300">
+                    O cliente pediu alteração
+                  </p>
+                  <p className="t-body text-slate-800 dark:text-slate-100 mt-1.5 leading-relaxed whitespace-pre-wrap">
+                    {pedidoDoCliente.text}
+                  </p>
+                  <p className="t-meta text-slate-500 dark:text-slate-400 mt-1.5">
+                    {pedidoDoCliente.by}
+                    {pedidoDoCliente.ts
+                      ? ` · ${new Date(pedidoDoCliente.ts).toLocaleString('pt-BR', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}`
+                      : ''}
+                  </p>
+                </div>
+              )}
 
               {/* Briefing & Direcionamento Box (Stretches to fill height) */}
               <div className="flex-1 flex flex-col">

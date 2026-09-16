@@ -130,7 +130,8 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
                 file={activeFile}
                 taskId={task.id}
                 alt={task.title}
-                className="w-full aspect-square rounded-xl border border-slate-200 dark:border-slate-800"
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-800"
+                manterProporcao
               />
 
               {files.length > 1 && (

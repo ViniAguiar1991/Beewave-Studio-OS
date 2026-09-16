@@ -1,6 +1,6 @@
 import { PostArte, ehArteExibivel } from '../ArteDaTarefa';
 import React from 'react';
-import { ArrowRight, Lightbulb } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import { Client, Task } from '../../types';
 import { formatLongDate, formatFriendlyDate, formatTimestamp } from '../../utils/dateFormatter';
 import {
@@ -87,11 +87,6 @@ export const ClientSummaryTab: React.FC<ClientSummaryTabProps> = ({
           <EmptyState
             title="Nada esperando por você agora"
             hint="Assim que a Beewave enviar uma publicação para aprovação, ela aparece aqui e você recebe um aviso."
-            action={
-              <Button variant="primary" size="sm" icon={Lightbulb} onClick={onSuggest}>
-                Sugerir uma pauta
-              </Button>
-            }
           />
         ) : (
           <ul className="divide-y divide-slate-200 dark:divide-slate-800">
