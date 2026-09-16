@@ -323,7 +323,7 @@ export const PostImage: React.FC<{
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
           className={`${
-            manterProporcao ? 'w-full h-auto object-contain' : 'h-full w-full object-cover'
+            manterProporcao ? 'w-full h-auto max-h-full object-contain' : 'h-full w-full object-cover'
           } transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
       )}

@@ -324,14 +324,14 @@ export const ClientPortalHeader: React.FC<ClientPortalHeaderProps> = ({
 
 /** Marca da Beewave na barra do portal: hexágono com o recorte claro. */
 const MarcaBeewave: React.FC = () => (
+  // Um caminho só, com o recorte vazado: o fundo da barra aparece por dentro
+  // do hexágono, em vez de um retângulo branco colado por cima.
   <svg viewBox="0 0 24 26" aria-hidden="true" className="h-5 w-5 shrink-0">
     <path
-      d="M12 0.8 22.4 6.9v12.2L12 25.2 1.6 19.1V6.9z"
+      fillRule="evenodd"
+      clipRule="evenodd"
+      d="M12 0.8 22.4 6.9v12.2L12 25.2 1.6 19.1V6.9zM13.6 5.6a1 1 0 0 0-1.5.9v6.1c0 .6.3 1.1.8 1.4l5.4 3.2a1 1 0 0 0 1.5-.9v-6.1c0-.6-.3-1.1-.8-1.4z"
       fill="#F9AE3F"
-    />
-    <path
-      d="M13.6 5.6 19 8.8a1.6 1.6 0 0 1 .8 1.4v6.1a1 1 0 0 1-1.5.9l-5.4-3.2a1.6 1.6 0 0 1-.8-1.4V6.5a1 1 0 0 1 1.5-.9z"
-      fill="#ffffff"
     />
   </svg>
 );

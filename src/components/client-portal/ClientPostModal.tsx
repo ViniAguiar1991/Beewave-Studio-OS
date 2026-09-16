@@ -108,29 +108,26 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="post-modal-title"
-        className="relative w-full sm:max-w-5xl h-full sm:h-auto sm:max-h-[88vh] overflow-hidden bg-white dark:bg-[#0f1114] sm:rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+        className="relative w-full sm:max-w-6xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden bg-white dark:bg-[#0f1114] sm:rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
         style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
-        <div className="flex items-center justify-between gap-4 px-5 sm:px-6 h-14 shrink-0 border-b border-slate-200 dark:border-slate-800">
-          <StatusPill status={task.status} long />
-          <button
-            onClick={onClose}
-            aria-label="Fechar"
-            className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 hover:text-slate-950 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-slate-800 transition-colors cursor-pointer"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <button
+          onClick={onClose}
+          aria-label="Fechar"
+          className="absolute top-3 right-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-600 hover:text-slate-950 dark:text-slate-300 dark:hover:text-white border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+        >
+          <X className="h-4 w-4" />
+        </button>
 
-        <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12">
-          {/* Arte */}
-          <div className="lg:col-span-7 bg-slate-50 dark:bg-[#0a0b0d] p-5 sm:p-7 lg:border-r border-slate-200 dark:border-slate-800">
-            <div className="relative">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12">
+          {/* Arte — ocupa o lado esquerdo inteiro, sobre fundo escuro. */}
+          <div className="lg:col-span-7 bg-black flex flex-col justify-center lg:border-r border-slate-200 dark:border-slate-800 min-h-[46vh] lg:min-h-0">
+            <div className="relative max-h-full">
               <PostArte
                 file={activeFile}
                 taskId={task.id}
                 alt={task.title}
-                className="w-full rounded-xl border border-slate-200 dark:border-slate-800"
+                className="w-full max-h-[76vh] bg-black"
                 manterProporcao
               />
 
@@ -152,7 +149,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
             </div>
 
             {files.length > 1 && (
-              <div className="mt-3 flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <div className="px-4 pb-4 pt-3 flex items-center justify-center gap-2 overflow-x-auto no-scrollbar">
                 {files.map((f, i) => (
                   <button
                     key={f.id || i}
@@ -160,8 +157,8 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
                     aria-label={`Ver imagem ${i + 1}`}
                     className={`h-12 w-12 shrink-0 rounded-md overflow-hidden border transition-all duration-150 cursor-pointer ${
                       slideIdx === i
-                        ? 'border-slate-950 dark:border-white'
-                        : 'border-slate-200 dark:border-slate-800 opacity-55 hover:opacity-100'
+                        ? 'border-white'
+                        : 'border-white/30 opacity-55 hover:opacity-100'
                     }`}
                   >
                     <ArteDaTarefa file={f} taskId={task.id} compacta className="h-full w-full object-cover" />
@@ -171,8 +168,30 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
             )}
           </div>
 
-          {/* Conteúdo */}
-          <div className="lg:col-span-5 p-5 sm:p-7 space-y-6">
+          {/* Conteúdo — a coluna de leitura, como a lateral de um post. */}
+          <div className="lg:col-span-5 flex flex-col min-h-0">
+            <div className="shrink-0 flex items-center gap-3 px-5 sm:px-6 h-16 border-b border-slate-200 dark:border-slate-800">
+              {client?.logoUrl ? (
+                <img
+                  src={client.logoUrl}
+                  alt=""
+                  className="h-9 w-9 shrink-0 rounded-full object-cover border border-slate-200 dark:border-slate-800"
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-slate-950 dark:bg-white text-white dark:text-slate-950 font-display font-semibold t-meta"
+                >
+                  {(client?.company || 'BW').slice(0, 2).toUpperCase()}
+                </span>
+              )}
+              <span className="min-w-0 flex-1 t-lead font-medium text-slate-950 dark:text-white truncate">
+                {client?.company || 'Publicação'}
+              </span>
+              <StatusPill status={task.status} />
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
             <div>
               <h2
                 id="post-modal-title"
@@ -311,6 +330,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
                 )}
               </div>
             )}
+            </div>
           </div>
         </div>
 
