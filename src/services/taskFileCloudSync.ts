@@ -251,9 +251,16 @@ export const haEnvioDeArteEmAndamento = (): boolean => {
   return false;
 };
 
-/** A arte está no IndexedDB: daqui em diante a espera pela nuvem tem prazo. */
+/**
+ * A arte está no IndexedDB: daqui em diante a espera pela nuvem tem prazo.
+ *
+ * Sem exigir que o envio já esteja registrado em `enviando`: no reparo, que
+ * pula a gravação local (o conteúdo veio de lá), esta função roda antes do
+ * `enviando.set` — e a arte ficava sem relógio, ou seja, em espera eterna.
+ * O `finally` do envio limpa os dois mapas de qualquer forma.
+ */
 const marcarArteGuardada = (fileId: string) => {
-  if (enviando.has(fileId) && !inicioDoEnvio.has(fileId)) inicioDoEnvio.set(fileId, Date.now());
+  if (!inicioDoEnvio.has(fileId)) inicioDoEnvio.set(fileId, Date.now());
 };
 
 /**
