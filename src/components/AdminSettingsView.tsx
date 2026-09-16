@@ -66,7 +66,7 @@ export const AdminSettingsView: React.FC = () => {
       </header>
 
       <nav
-        className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto"
+        className="flex items-center gap-6 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar"
         aria-label="Seções das configurações"
       >
         {SECOES.map((s) => {

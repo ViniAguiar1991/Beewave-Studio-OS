@@ -16,6 +16,7 @@ import {
   syncCampaignToCloud,
   deleteCampaignFromCloud,
   syncPromptsConfigToCloud,
+  syncAgencyConfigToCloud,
 } from './services/firestoreSync';
 import {
   User,
@@ -1220,6 +1221,8 @@ interface BeeWaveState {
   plans: Plan[];
   categories: Category[];
   statuses: TaskStatus[];
+  /** Envia formatos, etapas e planos para a nuvem — valem para a agência toda. */
+  publicarConfigDaAgencia: () => void;
   addPlan: (p: Partial<Plan>) => void;
   updatePlan: (id: string, p: Partial<Plan>) => void;
   deletePlan: (id: string) => void;
@@ -2527,48 +2530,78 @@ export const useAppStore = create<BeeWaveState>()(
           customTabs: state.customTabs.filter((t) => t.id !== id),
         })),
 
+      /**
+       * Formatos, etapas e planos valem para a agência inteira.
+       *
+       * Antes só mudavam na máquina de quem editou: quem cadastrava um formato
+       * novo era o único a enxergá-lo. Agora toda alteração vai para a nuvem e
+       * chega aos colegas pelo mesmo caminho do resto.
+       */
+      publicarConfigDaAgencia: () => {
+        const { categories, statuses, plans } = get();
+        void syncAgencyConfigToCloud({ categories, statuses, plans });
+      },
+
       // Plans, Categories & Statuses
       plans: DEFAULT_PLANS,
       categories: DEFAULT_CATEGORIES,
       statuses: INITIAL_STATUSES,
-      addPlan: (p) =>
+      addPlan: (p) => {
         set((state) => ({
           plans: [...state.plans, { id: `plan_${Date.now()}`, name: 'Novo Plano', price: 990, postsPerWeek: 3, description: '', ...p }],
-        })),
-      updatePlan: (id, p) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      updatePlan: (id, p) => {
         set((state) => ({
           plans: state.plans.map((x) => (x.id === id ? { ...x, ...p } : x)),
-        })),
-      deletePlan: (id) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      deletePlan: (id) => {
         set((state) => ({
           plans: state.plans.filter((x) => x.id !== id),
-        })),
-      addCategory: (c) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      addCategory: (c) => {
         set((state) => ({
           categories: [...state.categories, { id: `cat_${Date.now()}`, name: 'Nova Categoria', color: '#f59e0b', ...c }],
-        })),
-      updateCategory: (id, c) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      updateCategory: (id, c) => {
         set((state) => ({
           categories: state.categories.map((x) => (x.id === id ? { ...x, ...c } : x)),
-        })),
-      deleteCategory: (id) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      deleteCategory: (id) => {
         set((state) => ({
           categories: state.categories.filter((x) => x.id !== id),
-        })),
-      addStatus: (s) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      addStatus: (s) => {
         set((state) => ({
           statuses: [...state.statuses, { key: `st_${Date.now()}` as any, label: 'Novo Status', color: '#64748b', group: 'progress', ...s }],
-        })),
-      updateStatus: (key, s) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      updateStatus: (key, s) => {
         set((state) => ({
           statuses: state.statuses.map((x) => (x.key === key ? { ...x, ...s } : x)),
-        })),
-      deleteStatus: (key) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      deleteStatus: (key) => {
         set((state) => ({
           statuses: state.statuses.filter((x) => x.key !== key),
           tasks: state.tasks.map((t) => (t.status === key ? { ...t, status: 'nao_iniciado' } : t)),
-        })),
-      moveStatus: (key, direction) =>
+        }));
+        get().publicarConfigDaAgencia();
+      },
+      moveStatus: (key, direction) => {
         set((state) => {
           const list = [...state.statuses];
           const idx = list.findIndex((x) => x.key === key);
@@ -2578,9 +2611,13 @@ export const useAppStore = create<BeeWaveState>()(
           list[idx] = list[target];
           list[target] = temp;
           return { statuses: list };
-        }),
-      reorderStatuses: (newStatuses) =>
-        set(() => ({ statuses: newStatuses })),
+        });
+        get().publicarConfigDaAgencia();
+      },
+      reorderStatuses: (newStatuses) => {
+        set(() => ({ statuses: newStatuses }));
+        get().publicarConfigDaAgencia();
+      },
 
       // Campaigns
       campaigns: DEFAULT_CAMPAIGNS,
