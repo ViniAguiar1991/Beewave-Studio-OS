@@ -214,7 +214,13 @@ const podeRecarregarSozinho = (): boolean => {
     !jaTentouEssaVersao(versaoRemota) &&
     bloqueios === 0 &&
     !haEdicaoAberta() &&
-    useStatusNuvem.getState().pendentes === 0 &&
+    // Gravação pendente não impede: o Firestore guarda a fila no navegador
+    // (persistentLocalCache) e ela sobe depois da recarga. Só esperamos a
+    // confirmação por um tempo curto — com a cota estourada ou sem internet a
+    // promessa nunca termina, e era justamente a aba parada na versão velha
+    // que precisava atualizar. Arte subindo é outra história: ela ainda pode
+    // estar só na memória, então essa sim segura.
+    (useStatusNuvem.getState().pendentes === 0 || useStatusNuvem.getState().atrasado) &&
     !haEnvioDeArteEmAndamento() &&
     navigator.onLine
   );
@@ -231,8 +237,11 @@ async function tentarRecarregarComAbaOculta() {
     const { versaoRemota } = useAtualizacao.getState();
     if (podeRecarregarSozinho() && versaoRemota) {
       try {
-        sessionStorage.setItem(CHAVE_RECARGA, versaoRemota);
+        // A tela primeiro: se o sessionStorage estourar, a marca da tentativa
+        // não pode ficar sozinha — ela desligaria a recarga desta versão sem
+        // que nada tivesse recarregado.
         guardarTela();
+        sessionStorage.setItem(CHAVE_RECARGA, versaoRemota);
       } catch {
         // Sem conseguir marcar a tentativa, recarregar arriscaria um laço.
         agendarTentativa(NOVA_TENTATIVA_MS);
