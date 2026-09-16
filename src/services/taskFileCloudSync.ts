@@ -119,6 +119,7 @@ async function enviarArquivo(taskId: string, file: TaskFile): Promise<void> {
       size: file.size,
       taskId,
     });
+    marcarArteGuardada(file.id);
 
     if (isCloudSyncDisabled()) return;
 
@@ -234,10 +235,18 @@ const ESPERA_MAXIMA_POR_ARTE_MS = 30_000;
  */
 export const haEnvioDeArteEmAndamento = (): boolean => {
   const agora = Date.now();
-  for (const inicio of inicioDoEnvio.values()) {
-    if (agora - inicio < ESPERA_MAXIMA_POR_ARTE_MS) return true;
+  for (const fileId of enviando.keys()) {
+    const inicio = inicioDoEnvio.get(fileId);
+    // Sem relógio, a arte ainda não foi guardada no navegador: existe só na
+    // memória e recarregar agora a perderia. Espera sem prazo, de propósito.
+    if (inicio === undefined || agora - inicio < ESPERA_MAXIMA_POR_ARTE_MS) return true;
   }
   return false;
+};
+
+/** A arte está no IndexedDB: daqui em diante a espera pela nuvem tem prazo. */
+const marcarArteGuardada = (fileId: string) => {
+  if (enviando.has(fileId) && !inicioDoEnvio.has(fileId)) inicioDoEnvio.set(fileId, Date.now());
 };
 
 /**
@@ -260,6 +269,19 @@ export function garantirArquivoNaNuvem(
   const tarefa = (async () => {
     let idDaTarefa = taskId;
     const temConteudo = !!file.dataUrl && file.dataUrl.startsWith('data:');
+
+    // Primeiro guardar, depois conferir a nuvem: a conferência pode ficar
+    // pendurada (rede que responde mas não entrega) e, até a arte estar no
+    // IndexedDB, ela só existe na memória desta aba.
+    if (temConteudo) {
+      await saveFileToLocalDb(file.id, file.dataUrl!, {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        taskId,
+      });
+      marcarArteGuardada(file.id);
+    }
 
     if (temConteudo && !isCloudSyncDisabled()) {
       try {
@@ -293,7 +315,6 @@ export function garantirArquivoNaNuvem(
   });
 
   enviando.set(file.id, tarefa);
-  inicioDoEnvio.set(file.id, Date.now());
   return tarefa;
 }
 
@@ -317,7 +338,6 @@ export function reenviarArte(taskId: string, file: TaskFile): Promise<void> {
     }
   });
   enviando.set(file.id, tarefa);
-  inicioDoEnvio.set(file.id, Date.now());
   return tarefa;
 }
 
