@@ -7,6 +7,8 @@ import {
   Search,
   X,
   Settings2,
+  Copy,
+  Trash2,
 } from 'lucide-react';
 import { useAppStore, useCurrentUser } from '../store';
 import { Task, TaskStatusKey, TaskView } from '../types';
@@ -155,6 +157,8 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
   const [search, setSearch] = useState('');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  /** Tarefas marcadas para uma ação em lote. Vazio = nenhuma seleção em curso. */
+  const [selecionadas, setSelecionadas] = useState<string[]>([]);
   const [publishError, setPublishError] = useState<string | null>(null);
 
   const viewsDirty = useAppStore((s) => s.viewsDirty);
@@ -267,6 +271,10 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
     () => taskViews.find((v) => v.id === activeViewId) || taskViews[0],
     [taskViews, activeViewId]
   );
+
+  // Trocar de visão troca o conjunto de tarefas na tela: a seleção anterior
+  // deixaria marcadas linhas que nem estão mais listadas.
+  React.useEffect(() => setSelecionadas([]), [view.id, view.mode]);
 
   const ctx: EvalContext = useMemo(
     () => ({
@@ -522,6 +530,52 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
         </button>
       </div>
 
+      {/* Barra de seleção: só existe enquanto houver tarefa marcada. */}
+      {selecionadas.length > 0 && view.mode === 'list' && (
+        <div className="flex items-center gap-3 flex-wrap rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-3.5 py-2.5">
+          <span className="t-ui font-medium text-slate-900 dark:text-white tabular-nums">
+            {selecionadas.length}{' '}
+            {selecionadas.length === 1 ? 'tarefa selecionada' : 'tarefas selecionadas'}
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Copy}
+              onClick={() => {
+                selecionadas.forEach((id) => duplicateTask(id));
+                setSelecionadas([]);
+              }}
+            >
+              Duplicar
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              icon={Trash2}
+              onClick={() => {
+                const quantas = selecionadas.length;
+                if (
+                  !window.confirm(
+                    quantas === 1
+                      ? 'Mover 1 tarefa para a lixeira?'
+                      : `Mover ${quantas} tarefas para a lixeira?`
+                  )
+                )
+                  return;
+                selecionadas.forEach((id) => deleteTask(id));
+                setSelecionadas([]);
+              }}
+            >
+              Excluir
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelecionadas([])}>
+              Limpar
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Conteúdo */}
       {view.mode === 'list' && (
         <TaskTable
@@ -543,6 +597,15 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             }
           }}
           onReorderColumns={(columnOrder) => updateTaskView(view.id, { columnOrder })}
+          selecionadas={selecionadas}
+          onAlternarSelecao={(id) =>
+            setSelecionadas((atuais) =>
+              atuais.includes(id) ? atuais.filter((x) => x !== id) : [...atuais, id]
+            )
+          }
+          onSelecionarTodas={(marcar) =>
+            setSelecionadas(marcar ? visibleTasks.map((t) => t.id) : [])
+          }
           emptyTitle={
             search || quickActive
               ? 'Nenhuma tarefa com esses filtros'

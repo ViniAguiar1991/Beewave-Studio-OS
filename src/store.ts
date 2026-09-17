@@ -1476,10 +1476,16 @@ export const useAppStore = create<BeeWaveState>()(
       },
 
       updateTaskView: (viewId, data) =>
-        set((state) => ({
-          taskViews: state.taskViews.map((v) => (v.id === viewId ? { ...v, ...data } : v)),
-          viewsDirty: true,
-        })),
+        set((state) => {
+          // Trocar entre lista, quadro e calendário é preferência de quem olha,
+          // não mudança da visão: não faz sentido oferecer "salvar para toda a
+          // equipe" por isso. Filtros, cores, colunas e ordenação, sim.
+          const soApresentacao = Object.keys(data).every((campo) => campo === 'mode');
+          return {
+            taskViews: state.taskViews.map((v) => (v.id === viewId ? { ...v, ...data } : v)),
+            viewsDirty: soApresentacao ? state.viewsDirty : true,
+          };
+        }),
 
       deleteTaskView: (viewId) =>
         set((state) => {
