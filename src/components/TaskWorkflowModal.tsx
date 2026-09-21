@@ -1239,7 +1239,10 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
       {previewMediaUrl && (
         <div
           className="fixed inset-0 z-60 bg-black/90 flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
-          onClick={() => {
+          onClick={(e) => {
+            // Uma camada por vez: o clique fecha só a imagem. Sem isto ele
+            // subia até o fundo da tarefa, que fechava a tarefa junto.
+            e.stopPropagation();
             setPreviewMediaUrl(null);
             setPreviewMediaName('');
           }}

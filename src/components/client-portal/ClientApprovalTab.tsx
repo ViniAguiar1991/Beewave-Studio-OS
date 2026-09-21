@@ -1,6 +1,6 @@
 import { ArteDaTarefa, PostArte, ehArteExibivel } from '../ArteDaTarefa';
 import React, { useState } from 'react';
-import { Check, MessageSquare, Copy, Maximize2 } from 'lucide-react';
+import { Check, MessageSquare, Copy, Maximize2, ExternalLink } from 'lucide-react';
 import { Task, Client } from '../../types';
 import { formatLongDate, formatTimestamp } from '../../utils/dateFormatter';
 import { getPostDay, byPostDate, describeActivity } from './portalStatus';
@@ -161,13 +161,21 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
                     aria-label={`Ampliar arte de ${task.title}`}
                     className="relative block w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group cursor-pointer"
                   >
-                    <PostArte
-                      file={activeFile}
-                      taskId={task.id}
-                      alt={task.title}
-                      className="w-full"
-                      manterProporcao
-                    />
+                    {!activeFile && task.driveLink ? (
+                      <img
+                        src="/arquivo-pesado.webp"
+                        alt="O arquivo ficou pesado. Visualize a arte ou vídeo pelo link."
+                        className="w-full h-auto"
+                      />
+                    ) : (
+                      <PostArte
+                        file={activeFile}
+                        taskId={task.id}
+                        alt={task.title}
+                        className="w-full"
+                        manterProporcao
+                      />
+                    )}
                     <span className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/25 transition-colors duration-150 grid place-items-center">
                       <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 inline-flex items-center gap-1.5 t-meta font-medium text-white">
                         <Maximize2 className="h-3.5 w-3.5" />
@@ -175,6 +183,19 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
                       </span>
                     </span>
                   </button>
+
+                  {/* Arte grande demais para subir: o cliente vê pelo link. */}
+                  {task.driveLink && (
+                    <a
+                      href={task.driveLink}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 t-ui font-medium text-slate-900 dark:text-white underline underline-offset-4 decoration-slate-300 hover:decoration-slate-900 dark:hover:decoration-white"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Ver arte ou vídeo no link
+                    </a>
+                  )}
 
                   {files.length > 1 && (
                     <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">

@@ -1,6 +1,6 @@
-import { ArteDaTarefa, PostArte, ehArteExibivel } from '../ArteDaTarefa';
+import { PostArte, ehArteExibivel } from '../ArteDaTarefa';
 import React, { useEffect, useState } from 'react';
-import { X, Check, MessageSquare, Copy, ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { X, Check, MessageSquare, Copy, ChevronLeft, ChevronRight, Plus, Trash2, ExternalLink } from 'lucide-react';
 import { Task, Client } from '../../types';
 import { formatLongDate, formatTimestamp } from '../../utils/dateFormatter';
 import { describeActivity } from './portalStatus';
@@ -122,50 +122,25 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12">
           {/* Arte — ocupa o lado esquerdo inteiro, sobre fundo escuro. */}
           <div className="lg:col-span-7 bg-black flex flex-col justify-center lg:border-r border-slate-200 dark:border-slate-800 min-h-[46vh] lg:min-h-0">
+            {/* Nada por cima da arte: o cliente precisa ver a peça inteira.
+                A navegação do carrossel fica no rodapé. */}
             <div className="relative max-h-full">
-              <PostArte
-                file={activeFile}
-                taskId={task.id}
-                alt={task.title}
-                className="w-full max-h-[76vh] bg-black"
-                manterProporcao
-              />
-
-              {files.length > 1 && (
-                <>
-                  <CarouselNav
-                    side="left"
-                    onClick={() => setSlideIdx((i) => (i - 1 + files.length) % files.length)}
-                  />
-                  <CarouselNav
-                    side="right"
-                    onClick={() => setSlideIdx((i) => (i + 1) % files.length)}
-                  />
-                  <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-slate-950/75 px-2.5 py-1 t-meta font-medium text-white tabular-nums">
-                    {slideIdx + 1} / {files.length}
-                  </span>
-                </>
+              {!activeFile && task.driveLink ? (
+                <img
+                  src="/arquivo-pesado.webp"
+                  alt="O arquivo ficou pesado. Visualize a arte ou vídeo pelo link ao lado."
+                  className="w-full max-h-[76vh] object-contain bg-black"
+                />
+              ) : (
+                <PostArte
+                  file={activeFile}
+                  taskId={task.id}
+                  alt={task.title}
+                  className="w-full max-h-[76vh] bg-black"
+                  manterProporcao
+                />
               )}
             </div>
-
-            {files.length > 1 && (
-              <div className="px-4 pb-4 pt-3 flex items-center justify-center gap-2 overflow-x-auto no-scrollbar">
-                {files.map((f, i) => (
-                  <button
-                    key={f.id || i}
-                    onClick={() => setSlideIdx(i)}
-                    aria-label={`Ver imagem ${i + 1}`}
-                    className={`h-12 w-12 shrink-0 rounded-md overflow-hidden border transition-all duration-150 cursor-pointer ${
-                      slideIdx === i
-                        ? 'border-white'
-                        : 'border-white/30 opacity-55 hover:opacity-100'
-                    }`}
-                  >
-                    <ArteDaTarefa file={f} taskId={task.id} compacta className="h-full w-full object-cover" />
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
 
           {/* Conteúdo — a coluna de leitura, como a lateral de um post. */}
@@ -205,6 +180,25 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
                   ` · ${formatLongDate((task.postDate || task.date)?.split('T')[0])}`}
               </p>
             </div>
+
+            {task.driveLink && (
+              <a
+                href={task.driveLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-300 dark:border-slate-700 px-3.5 py-3 hover:border-slate-900 dark:hover:border-white transition-colors group"
+              >
+                <span className="min-w-0">
+                  <span className="block t-ui font-medium text-slate-950 dark:text-white">
+                    Ver arte ou vídeo no link
+                  </span>
+                  <span className="block t-meta text-slate-500 dark:text-slate-400 truncate">
+                    {task.driveLink}
+                  </span>
+                </span>
+                <ExternalLink className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors" />
+              </a>
+            )}
 
             {mode === 'conteudo' ? (
               <>
@@ -334,10 +328,31 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
           </div>
         </div>
 
-        {/* Ação dominante, fixa no rodapé. */}
-        {isAwaiting && (
+        {/* Rodapé: navegação do carrossel e a ação dominante. */}
+        {(isAwaiting || files.length > 1) && (
           <div className="shrink-0 border-t border-slate-200 dark:border-slate-800 px-5 sm:px-6 py-4 flex items-center justify-end gap-3">
-            {mode === 'conteudo' ? (
+            {files.length > 1 && (
+              <div className="mr-auto flex items-center gap-2">
+                <button
+                  onClick={() => setSlideIdx((i) => (i - 1 + files.length) % files.length)}
+                  aria-label="Imagem anterior"
+                  className="grid h-8 w-8 place-items-center rounded-full border border-slate-300 dark:border-slate-700 text-slate-600 hover:text-slate-950 hover:border-slate-900 dark:text-slate-300 dark:hover:text-white dark:hover:border-white transition-colors cursor-pointer"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="t-ui font-medium text-slate-700 dark:text-slate-200 tabular-nums min-w-[3.5rem] text-center">
+                  {slideIdx + 1} / {files.length}
+                </span>
+                <button
+                  onClick={() => setSlideIdx((i) => (i + 1) % files.length)}
+                  aria-label="Próxima imagem"
+                  className="grid h-8 w-8 place-items-center rounded-full border border-slate-300 dark:border-slate-700 text-slate-600 hover:text-slate-950 hover:border-slate-900 dark:text-slate-300 dark:hover:text-white dark:hover:border-white transition-colors cursor-pointer"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            {isAwaiting && (mode === 'conteudo' ? (
               <>
                 <Button variant="secondary" icon={MessageSquare} onClick={() => setMode('ajustes')}>
                   Pedir ajuste
@@ -357,22 +372,10 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
                     : `Enviar ${pendingCount} ${pendingCount === 1 ? 'ajuste' : 'ajustes'}`}
                 </Button>
               </>
-            )}
+            ))}
           </div>
         )}
       </div>
     </div>
   );
 };
-
-const CarouselNav: React.FC<{ side: 'left' | 'right'; onClick: () => void }> = ({ side, onClick }) => (
-  <button
-    onClick={onClick}
-    aria-label={side === 'left' ? 'Imagem anterior' : 'Próxima imagem'}
-    className={`absolute top-1/2 -translate-y-1/2 ${
-      side === 'left' ? 'left-3' : 'right-3'
-    } grid h-9 w-9 place-items-center rounded-full bg-white/90 dark:bg-slate-900/90 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-900 transition-colors cursor-pointer`}
-  >
-    {side === 'left' ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-  </button>
-);
