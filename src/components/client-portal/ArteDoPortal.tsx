@@ -20,12 +20,21 @@ export const ArteDoPortal: React.FC<{
   task: Task;
   file: TaskFile | undefined;
   className?: string;
-}> = ({ task, file, className = '' }) => {
+  /** Classe da imagem em si; sem ela, a arte ocupa a largura toda. */
+  imgClassName?: string;
+}> = ({ task, file, className = '', imgClassName }) => {
   const imagens = useAppStore((s) => s.imagensPortal);
 
   if (file) {
     return (
-      <PostArte file={file} taskId={task.id} alt={task.title} className={className} manterProporcao />
+      <PostArte
+        file={file}
+        taskId={task.id}
+        alt={task.title}
+        className={className}
+        manterProporcao
+        imgClassName={imgClassName}
+      />
     );
   }
 
@@ -42,7 +51,7 @@ export const ArteDoPortal: React.FC<{
           ? 'O arquivo ficou pesado. Visualize a arte ou vídeo pelo link.'
           : 'A arte ainda está sendo produzida. Verifique mais tarde.'
       }
-      className={`w-full h-auto object-contain ${className}`}
+      className={imgClassName || `w-full h-auto object-contain ${className}`}
     />
   );
 };

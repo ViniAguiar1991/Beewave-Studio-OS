@@ -109,7 +109,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="post-modal-title"
-        className="relative w-full sm:max-w-6xl h-full sm:h-auto sm:max-h-[90vh] overflow-hidden bg-white dark:bg-[#0f1114] sm:rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
+        className="relative w-full sm:w-auto sm:max-w-[96vw] h-full sm:h-auto sm:max-h-[92vh] overflow-hidden bg-white dark:bg-[#0f1114] sm:rounded-xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col"
         style={{ animation: 'portal-fade-in 200ms cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         <button
@@ -120,19 +120,22 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
           <X className="h-4 w-4" />
         </button>
 
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12">
-          {/* Arte — ocupa o lado esquerdo inteiro, sobre fundo escuro. */}
-          <div className="lg:col-span-7 bg-black flex flex-col justify-center lg:border-r border-slate-200 dark:border-slate-800 min-h-[46vh] lg:min-h-0">
-            {/* Nada por cima da arte: o cliente precisa ver a peça inteira.
-                A navegação do carrossel fica no rodapé. */}
-            <div className="relative max-h-full">
-              <ArteDoPortal task={task} file={activeFile} className="max-h-[76vh] bg-black" />
-            </div>
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
+          {/* Arte. A coluna tem a largura da própria arte: a peça aparece
+              inteira, sem corte embaixo e sem faixa preta dos lados. Nada por
+              cima dela — a navegação do carrossel fica no rodapé. */}
+          <div className="shrink-0 flex items-center justify-center bg-slate-50 dark:bg-black lg:border-r border-slate-200 dark:border-slate-800">
+            <ArteDoPortal
+              task={task}
+              file={activeFile}
+              className="min-w-[16rem]"
+              imgClassName="block w-auto h-auto max-w-[92vw] max-h-[62vh] lg:max-h-[78vh] lg:max-w-[62vw] object-contain"
+            />
           </div>
 
           {/* Conteúdo — a coluna de leitura, como a lateral de um post. */}
-          <div className="lg:col-span-5 flex flex-col min-h-0">
-            <div className="shrink-0 flex items-center gap-3 px-5 sm:px-6 h-16 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex flex-col min-h-0 lg:w-[400px] lg:shrink-0">
+            <div className="shrink-0 flex items-center gap-3 pl-5 sm:pl-6 pr-14 h-16 border-b border-slate-200 dark:border-slate-800">
               {client?.logoUrl ? (
                 <img
                   src={client.logoUrl}

@@ -256,6 +256,8 @@ export const PostImage: React.FC<{
    * esconde justamente as bordas que ele deveria conferir.
    */
   manterProporcao?: boolean;
+  /** Classe da <img> no modo manterProporcao — para quem precisa limitar a altura. */
+  imgClassName?: string;
 }> = ({
   src,
   alt,
@@ -263,6 +265,7 @@ export const PostImage: React.FC<{
   carregando = false,
   indisponivel = false,
   manterProporcao = false,
+  imgClassName,
 }) => {
   const imgRef = React.useRef<HTMLImageElement>(null);
   const [loaded, setLoaded] = React.useState(false);
@@ -323,7 +326,9 @@ export const PostImage: React.FC<{
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
           className={`${
-            manterProporcao ? 'w-full h-auto max-h-full object-contain' : 'h-full w-full object-cover'
+            manterProporcao
+              ? imgClassName || 'w-full h-auto max-h-full object-contain'
+              : 'h-full w-full object-cover'
           } transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
         />
       )}
