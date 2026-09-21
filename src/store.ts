@@ -1223,6 +1223,12 @@ interface BeeWaveState {
   statuses: TaskStatus[];
   /** Envia formatos, etapas e planos para a nuvem — valem para a agência toda. */
   publicarConfigDaAgencia: () => void;
+  /**
+   * Imagens que o portal mostra no lugar da arte: enquanto ela está sendo
+   * produzida e quando é grande demais e vai por link. Vazio = imagem padrão.
+   */
+  imagensPortal: { emProducao?: string; arquivoPesado?: string };
+  definirImagemPortal: (chave: 'emProducao' | 'arquivoPesado', url: string | null) => void;
   addPlan: (p: Partial<Plan>) => void;
   updatePlan: (id: string, p: Partial<Plan>) => void;
   deletePlan: (id: string) => void;
@@ -2544,8 +2550,19 @@ export const useAppStore = create<BeeWaveState>()(
        * chega aos colegas pelo mesmo caminho do resto.
        */
       publicarConfigDaAgencia: () => {
-        const { categories, statuses, plans } = get();
-        void syncAgencyConfigToCloud({ categories, statuses, plans });
+        const { categories, statuses, plans, imagensPortal } = get();
+        void syncAgencyConfigToCloud({ categories, statuses, plans, imagensPortal });
+      },
+
+      imagensPortal: {},
+      definirImagemPortal: (chave, url) => {
+        set((state) => {
+          const proximas = { ...state.imagensPortal };
+          if (url) proximas[chave] = url;
+          else delete proximas[chave];
+          return { imagensPortal: proximas };
+        });
+        get().publicarConfigDaAgencia();
       },
 
       // Plans, Categories & Statuses

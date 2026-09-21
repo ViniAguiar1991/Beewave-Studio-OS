@@ -1,4 +1,5 @@
-import { PostArte, ehArteExibivel } from '../ArteDaTarefa';
+import { ehArteExibivel } from '../ArteDaTarefa';
+import { ArteDoPortal } from './ArteDoPortal';
 import React, { useEffect, useState } from 'react';
 import { X, Check, MessageSquare, Copy, ChevronLeft, ChevronRight, Plus, Trash2, ExternalLink } from 'lucide-react';
 import { Task, Client } from '../../types';
@@ -125,21 +126,7 @@ export const ClientPostModal: React.FC<ClientPostModalProps> = ({
             {/* Nada por cima da arte: o cliente precisa ver a peça inteira.
                 A navegação do carrossel fica no rodapé. */}
             <div className="relative max-h-full">
-              {!activeFile && task.driveLink ? (
-                <img
-                  src="/arquivo-pesado.webp"
-                  alt="O arquivo ficou pesado. Visualize a arte ou vídeo pelo link ao lado."
-                  className="w-full max-h-[76vh] object-contain bg-black"
-                />
-              ) : (
-                <PostArte
-                  file={activeFile}
-                  taskId={task.id}
-                  alt={task.title}
-                  className="w-full max-h-[76vh] bg-black"
-                  manterProporcao
-                />
-              )}
+              <ArteDoPortal task={task} file={activeFile} className="max-h-[76vh] bg-black" />
             </div>
           </div>
 

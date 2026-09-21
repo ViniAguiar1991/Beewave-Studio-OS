@@ -14,6 +14,8 @@ import { compressImage } from '../utils/imageCompressor';
 import { TaskStatus } from '../types';
 import { FRASES_PADRAO, fraseDoDia } from '../lib/weekPlan';
 import { Button, BlockHeader, EmptyState, Toast } from './ui';
+import { enviarImagemDoPortal } from '../services/storageArtes';
+import { IMAGEM_PADRAO } from './client-portal/ArteDoPortal';
 
 type Secao = 'marca' | 'inicio' | 'tarefas' | 'dados';
 
@@ -185,7 +187,104 @@ const SecaoMarca: React.FC<{ onAviso: (m: string) => void }> = ({ onAviso }) => 
           PNG quadrado com fundo transparente funciona melhor.
         </p>
       </div>
+
+      <ImagensDoPortal onAviso={onAviso} />
     </section>
+  );
+};
+
+/**
+ * As duas imagens que o portal mostra no lugar da arte.
+ *
+ * Sobem para o Storage (não para o banco) e o endereço vai para a
+ * configuração da agência — o portal de todos os clientes troca junto.
+ */
+const ImagensDoPortal: React.FC<{ onAviso: (m: string) => void }> = ({ onAviso }) => {
+  const imagens = useAppStore((s) => s.imagensPortal);
+  const definir = useAppStore((s) => s.definirImagemPortal);
+  const [enviando, setEnviando] = useState<string | null>(null);
+
+  const opcoes: { chave: 'emProducao' | 'arquivoPesado'; titulo: string; quando: string }[] = [
+    {
+      chave: 'emProducao',
+      titulo: 'Arte em produção',
+      quando: 'Aparece quando a pauta ainda não tem arte anexada.',
+    },
+    {
+      chave: 'arquivoPesado',
+      titulo: 'Arquivo pesado',
+      quando: 'Aparece quando a arte vai por link, sem imagem anexada.',
+    },
+  ];
+
+  const trocar = async (chave: 'emProducao' | 'arquivoPesado', arquivo: File | undefined) => {
+    if (!arquivo) return;
+    setEnviando(chave);
+    try {
+      definir(chave, await enviarImagemDoPortal(chave, arquivo));
+      onAviso('Imagem do portal atualizada para todos os clientes.');
+    } catch {
+      onAviso('Não foi possível enviar essa imagem. Tente de novo.');
+    } finally {
+      setEnviando(null);
+    }
+  };
+
+  return (
+    <div className="space-y-4 pt-4">
+      <BlockHeader title="Imagens do portal" />
+      <p className="t-meta text-slate-500 dark:text-slate-400 max-w-xl">
+        O que o cliente vê no lugar da arte. Vale para o portal de todos os clientes.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 max-w-3xl">
+        {opcoes.map(({ chave, titulo, quando }) => {
+          const personalizada = imagens[chave];
+          return (
+            <div key={chave} className="space-y-3">
+              <img
+                src={personalizada || IMAGEM_PADRAO[chave]}
+                alt={titulo}
+                className="w-full aspect-[3/4] object-cover rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900"
+              />
+              <div>
+                <p className="t-ui font-medium text-slate-900 dark:text-white">{titulo}</p>
+                <p className="t-meta text-slate-500 dark:text-slate-400">{quando}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="inline-flex">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const arquivo = e.target.files?.[0];
+                      e.target.value = '';
+                      void trocar(chave, arquivo);
+                    }}
+                  />
+                  <span className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-slate-300 dark:border-slate-700 t-ui font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer">
+                    <Upload className="h-3.5 w-3.5" />
+                    {enviando === chave ? 'Enviando…' : 'Trocar imagem'}
+                  </span>
+                </label>
+                {personalizada && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      definir(chave, null);
+                      onAviso('Voltou para a imagem padrão.');
+                    }}
+                    className="t-ui text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white underline underline-offset-4 cursor-pointer"
+                  >
+                    Usar a padrão
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 };
 

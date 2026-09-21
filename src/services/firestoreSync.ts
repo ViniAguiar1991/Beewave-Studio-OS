@@ -203,6 +203,11 @@ export function initFirestoreSync() {
             newsNiches: config.newsNiches?.length ? config.newsNiches : state.newsNiches,
             promptFolders: config.promptFolders?.length ? config.promptFolders : state.promptFolders,
             prompts: config.prompts?.length ? config.prompts : state.prompts,
+            // Objeto vazio é escolha válida (voltar às imagens padrão).
+            imagensPortal:
+              config.imagensPortal && typeof config.imagensPortal === 'object'
+                ? config.imagensPortal
+                : state.imagensPortal,
           }));
         }
       }

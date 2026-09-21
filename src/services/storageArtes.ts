@@ -74,3 +74,20 @@ export const apagarArteDoStorage = async (storagePath?: string): Promise<void> =
     /* já não estava lá */
   }
 };
+
+/**
+ * Imagem que o portal mostra no lugar da arte (em produção, arquivo pesado).
+ *
+ * Vai com data no nome: trocar a imagem gera um endereço novo, e ninguém fica
+ * vendo a anterior guardada no cache do navegador. Fica dentro de `artes/`
+ * porque é a única pasta que as regras do Storage liberam.
+ */
+export const enviarImagemDoPortal = async (
+  chave: 'emProducao' | 'arquivoPesado',
+  arquivo: File,
+): Promise<string> => {
+  const storagePath = `artes/_portal/${chave}-${Date.now()}.${extensao(arquivo.type, arquivo.name)}`;
+  const alvo = ref(storage, storagePath);
+  await uploadBytes(alvo, arquivo, { contentType: arquivo.type || 'image/webp' });
+  return getDownloadURL(alvo);
+};

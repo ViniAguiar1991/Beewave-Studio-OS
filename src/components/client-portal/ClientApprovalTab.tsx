@@ -1,4 +1,5 @@
 import { ArteDaTarefa, PostArte, ehArteExibivel } from '../ArteDaTarefa';
+import { ArteDoPortal } from './ArteDoPortal';
 import React, { useState } from 'react';
 import { Check, MessageSquare, Copy, Maximize2, ExternalLink } from 'lucide-react';
 import { Task, Client } from '../../types';
@@ -161,21 +162,7 @@ export const ClientApprovalTab: React.FC<ClientApprovalTabProps> = ({
                     aria-label={`Ampliar arte de ${task.title}`}
                     className="relative block w-full rounded-xl overflow-hidden border border-slate-200 dark:border-slate-800 group cursor-pointer"
                   >
-                    {!activeFile && task.driveLink ? (
-                      <img
-                        src="/arquivo-pesado.webp"
-                        alt="O arquivo ficou pesado. Visualize a arte ou vídeo pelo link."
-                        className="w-full h-auto"
-                      />
-                    ) : (
-                      <PostArte
-                        file={activeFile}
-                        taskId={task.id}
-                        alt={task.title}
-                        className="w-full"
-                        manterProporcao
-                      />
-                    )}
+                    <ArteDoPortal task={task} file={activeFile} className="w-full" />
                     <span className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/25 transition-colors duration-150 grid place-items-center">
                       <span className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 inline-flex items-center gap-1.5 t-meta font-medium text-white">
                         <Maximize2 className="h-3.5 w-3.5" />
