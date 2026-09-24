@@ -10,6 +10,7 @@
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { app } from '../firebase';
 import type { TaskFile } from '../types';
+import { getFileFromLocalDb } from '../utils/fileStorageDb';
 
 const storage = getStorage(app);
 
@@ -90,4 +91,35 @@ export const enviarImagemDoPortal = async (
   const alvo = ref(storage, storagePath);
   await uploadBytes(alvo, arquivo, { contentType: arquivo.type || 'image/webp' });
   return getDownloadURL(alvo);
+};
+
+/* ----------------------------------------------------------------- reparo */
+
+const subindo = new Set<string>();
+
+/**
+ * Garante que a arte esteja no Storage, subindo o que ainda só existe aqui.
+ *
+ * Usada quando a tarefa é gravada e algum arquivo continua sem endereço: arte
+ * antiga, ou envio que falhou no meio. Sobe uma vez por arquivo — sem isto,
+ * cada gravação da tarefa mandaria a imagem inteira de novo.
+ */
+export const garantirArteNoStorage = async (
+  taskId: string,
+  file: TaskFile,
+): Promise<{ url: string; storagePath: string } | null> => {
+  if (!file?.id || file.url || subindo.has(file.id)) return null;
+  const dataUrl = file.dataUrl?.startsWith('data:')
+    ? file.dataUrl
+    : await getFileFromLocalDb(file.id);
+  if (!dataUrl?.startsWith('data:')) return null;
+  const conteudo = bytesDoDataUrl(dataUrl);
+  if (!conteudo) return null;
+
+  subindo.add(file.id);
+  try {
+    return await enviarArteParaStorage(taskId, file, conteudo);
+  } finally {
+    subindo.delete(file.id);
+  }
 };

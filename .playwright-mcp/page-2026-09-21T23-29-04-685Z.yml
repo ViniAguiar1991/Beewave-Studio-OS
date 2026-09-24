@@ -1,0 +1,34 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - paragraph [ref=e4]: Nome da marca
+      - link "Tirar dúvidas" [ref=e5] [cursor=pointer]:
+        - /url: "#duvidas"
+  - main [ref=e6]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - heading "Escreva aqui a promessa principal da sua oferta" [level=1] [ref=e10]
+        - paragraph [ref=e11]: Explique em uma ou duas frases para quem é e qual resultado a pessoa vai ter.
+        - link "Quero saber mais" [ref=e12] [cursor=pointer]:
+          - /url: "#beneficios"
+      - img "Descreva a foto para quem não pode vê-la" [ref=e13]
+    - generic [ref=e15]:
+      - heading "O que você ganha" [level=2] [ref=e16]
+      - list [ref=e17]:
+        - listitem [ref=e18]:
+          - generic [ref=e19]:
+            - heading "Escreva aqui o benefício principal" [level=3] [ref=e20]
+            - paragraph [ref=e21]: Uma frase curta explicando por que isso importa para o cliente.
+        - listitem [ref=e22]:
+          - generic [ref=e23]:
+            - heading "Escreva aqui o segundo benefício" [level=3] [ref=e24]
+            - paragraph [ref=e25]: Outra frase curta, com um resultado concreto que o cliente reconhece.
+    - generic [ref=e27]:
+      - heading "Perguntas frequentes" [level=2] [ref=e28]
+      - group [ref=e30]:
+        - generic "Escreva aqui uma pergunta que seus clientes sempre fazem?" [ref=e31] [cursor=pointer]
+  - contentinfo [ref=e32]:
+    - generic [ref=e33]:
+      - paragraph [ref=e34]: © 2026 Nome da marca. Todos os direitos reservados.
+      - link "Instagram" [ref=e35] [cursor=pointer]:
+        - /url: https://www.instagram.com/

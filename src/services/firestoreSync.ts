@@ -13,7 +13,8 @@ import {
 } from '../firebase';
 import { useAppStore } from '../store';
 import { Client, Task, User, Category, TaskStatus, NoteItem, PromptItem, AdminSystemPrompts, TaskLiveEditing, TableViewConfig, TaskView, CustomProperty, Campaign } from '../types';
-import { garantirArquivoNaNuvem, deleteTaskFileFromCloud, repararArtesDesteNavegador } from './taskFileCloudSync';
+import { deleteTaskFileFromCloud } from './taskFileCloudSync';
+import { garantirArteNoStorage } from './storageArtes';
 import {
   fimDeEnvio,
   inicioDeEnvio,
@@ -357,10 +358,16 @@ export function iniciarSyncDaSessao(usuario: { id: string; role: string; clientI
           }
         }
 
-        // Com a lista da nuvem em mãos, confere as artes deste navegador e
-        // sobe as que ficaram pela metade. Uma vez por sessão, sem pressa.
+        // Com a lista da nuvem em mãos, sobe para o Storage as artes que só
+        // existem neste navegador. Uma vez por sessão, sem pressa.
         if (!snapshot.metadata.fromCache && !clienteId) {
-          setTimeout(() => void repararArtesDesteNavegador(useAppStore.getState().tasks), 8000);
+          setTimeout(() => {
+            for (const t of useAppStore.getState().tasks) {
+              for (const f of [...(t.files || []), ...(t.briefingFiles || [])]) {
+                if (!f.url) void guardarArteEAnotarNaTarefa(t.id, f);
+              }
+            }
+          }, 8000);
         }
       }
     }));
@@ -684,12 +691,42 @@ export async function deleteCampaignFromCloud(campaignId: string) {
  * chegava aos outros usuários.
  *
  * Agora a edição fica na tela na hora e vai para a nuvem quando a pessoa para
- * de digitar (3 s), ao salvar e fechar, ou ao sair da página — o que vier
- * primeiro. Os colegas recebem em tempo real a partir daí.
+ * de digitar (1,2 s), ao salvar e fechar, ou ao sair da página — o que vier
+ * primeiro. A espera era de 3 s para economizar a cota da base antiga; sem a
+ * arte trafegando pelo banco, cada gravação é um documento pequeno e a espera
+ * pode ser curta.
  * ------------------------------------------------------------------------- */
 const agendadas = new Map<string, { tarefa: Task; relogio: ReturnType<typeof setTimeout> }>();
 
-export function agendarEnvioDaTarefa(task: Task, atrasoMs = 3000) {
+/**
+ * Sobe a arte para o Storage e guarda o endereço dela na tarefa.
+ *
+ * O endereço é um texto curto: a gravação seguinte é instantânea, e é ele que
+ * os colegas recebem — a imagem nunca mais trafega pelo banco.
+ */
+async function guardarArteEAnotarNaTarefa(taskId: string, arquivo: { id: string; name?: string }) {
+  try {
+    const atual = useAppStore.getState().tasks.find((t) => t.id === taskId);
+    const completo = [...(atual?.files || []), ...(atual?.briefingFiles || [])].find(
+      (f) => f.id === arquivo.id
+    );
+    if (!completo) return;
+    const endereco = await garantirArteNoStorage(taskId, completo);
+    if (!endereco) return;
+    const tarefa = useAppStore.getState().tasks.find((t) => t.id === taskId);
+    if (!tarefa) return;
+    const comEndereco = (lista?: typeof tarefa.files) =>
+      (lista || []).map((f) => (f.id === arquivo.id ? { ...f, ...endereco } : f));
+    useAppStore.getState().updateTask(taskId, {
+      files: comEndereco(tarefa.files),
+      briefingFiles: comEndereco(tarefa.briefingFiles),
+    });
+  } catch (err) {
+    console.warn(`Não foi possível guardar a arte ${arquivo.name || arquivo.id}:`, err);
+  }
+}
+
+export function agendarEnvioDaTarefa(task: Task, atrasoMs = 1200) {
   if (isCloudSyncDisabled() || !task.id) return;
   const anterior = agendadas.get(task.id);
   if (anterior) clearTimeout(anterior.relogio);
@@ -741,11 +778,11 @@ export async function syncTaskToCloud(task: Task) {
     // and strip large dataUrl from the main document to ensure it stays well under the 1MB Firestore limit
     const sanitizedFiles = (task.files || []).map((file) => {
       // Arte que já está no Storage não vai em pedaços para o banco.
-      if (!file.url && file.dataUrl && file.dataUrl.length > 50) {
-        // Só sobe se a nuvem ainda não tiver essa arte inteira.
-        garantirArquivoNaNuvem(task.id, file).catch((err) =>
-          console.warn(`Background chunk upload error for ${file.name}:`, err)
-        );
+      // Arte sem endereço sobe para o Storage. Fatiar a imagem em dezenas de
+      // documentos era o que deixava a gravação lenta e o aviso de "pendente"
+      // aceso: cada salvamento reenviava a arte inteira, pedaço por pedaço.
+      if (!file.url && (file.dataUrl || '').length > 50) {
+        void guardarArteEAnotarNaTarefa(task.id, file);
       }
       return {
         id: file.id,
@@ -761,10 +798,8 @@ export async function syncTaskToCloud(task: Task) {
     });
 
     const sanitizedBriefingFiles = (task.briefingFiles || []).map((file) => {
-      if (!file.url && file.dataUrl && file.dataUrl.length > 50) {
-        garantirArquivoNaNuvem(task.id, file).catch((err) =>
-          console.warn(`Background chunk upload error for briefing file ${file.name}:`, err)
-        );
+      if (!file.url && (file.dataUrl || '').length > 50) {
+        void guardarArteEAnotarNaTarefa(task.id, file);
       }
       return {
         id: file.id,

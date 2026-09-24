@@ -1381,6 +1381,69 @@ function registrarDesfazer(
  */
 const TETO_ARTE_NO_ARMAZENAMENTO = 30000;
 
+/* ---------------------------------------------------------------------------
+ * Gravação no navegador em rajada.
+ *
+ * O zustand grava o estado inteiro no localStorage a cada mudança, e a cada
+ * tecla digitada numa tarefa isso virava: montar o JSON de todas as tarefas,
+ * abrir de novo para tirar as artes pesadas, montar outra vez e escrever —
+ * tudo travando a tela. Agora a escrita acontece no máximo uma vez por
+ * segundo, e na hora quando a aba é fechada, que é quando ela precisa estar
+ * em dia.
+ * ------------------------------------------------------------------------ */
+const INTERVALO_DE_GRAVACAO_MS = 1000;
+let gravacaoPendente: { nome: string; valor: string } | null = null;
+let relogioDaGravacao: ReturnType<typeof setTimeout> | null = null;
+
+function escreverNoNavegador(nome: string, valor: string): void {
+  try {
+    window.localStorage.setItem(nome, semArtesPesadas(valor));
+  } catch (e) {
+    console.warn('LocalStorage quota or write error, trimming oversized image caches:', e);
+    try {
+      const parsed = JSON.parse(valor);
+      if (parsed?.state?.tasks) {
+        parsed.state.tasks = parsed.state.tasks.map((t: any) => ({
+          ...t,
+          files: (t.files || []).map((f: any) => ({
+            ...f,
+            dataUrl: f.dataUrl && f.dataUrl.length > 150000 ? '' : f.dataUrl,
+          })),
+        }));
+      }
+      window.localStorage.setItem(nome, JSON.stringify(parsed));
+    } catch (innerErr) {
+      console.error('Storage fallback failed:', innerErr);
+    }
+  }
+}
+
+function gravarPendenteAgora(): void {
+  if (relogioDaGravacao) {
+    clearTimeout(relogioDaGravacao);
+    relogioDaGravacao = null;
+  }
+  const alvo = gravacaoPendente;
+  gravacaoPendente = null;
+  if (alvo) escreverNoNavegador(alvo.nome, alvo.valor);
+}
+
+function agendarGravacaoNoNavegador(nome: string, valor: string): void {
+  gravacaoPendente = { nome, valor };
+  if (relogioDaGravacao) return;
+  relogioDaGravacao = setTimeout(() => {
+    relogioDaGravacao = null;
+    gravarPendenteAgora();
+  }, INTERVALO_DE_GRAVACAO_MS);
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', gravarPendenteAgora);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') gravarPendenteAgora();
+  });
+}
+
 function semArtesPesadas(valor: string): string {
   if (valor.length < 400000) return valor;
   try {
@@ -3107,27 +3170,7 @@ export const useAppStore = create<BeeWaveState>()(
         },
         setItem: (name: string, value: string): void => {
           if (typeof window === 'undefined') return;
-          try {
-            window.localStorage.setItem(name, semArtesPesadas(value));
-          } catch (e) {
-            console.warn('LocalStorage quota or write error, trimming oversized image caches:', e);
-            try {
-              const parsed = JSON.parse(value);
-              if (parsed?.state?.tasks) {
-                // If quota exceeded, sanitize images in tasks that might be too large
-                parsed.state.tasks = parsed.state.tasks.map((t: any) => ({
-                  ...t,
-                  files: (t.files || []).map((f: any) => ({
-                    ...f,
-                    dataUrl: f.dataUrl && f.dataUrl.length > 150000 ? '' : f.dataUrl,
-                  })),
-                }));
-              }
-              window.localStorage.setItem(name, JSON.stringify(parsed));
-            } catch (innerErr) {
-              console.error('Storage fallback failed:', innerErr);
-            }
-          }
+          agendarGravacaoNoNavegador(name, value);
         },
         removeItem: (name: string): void => {
           if (typeof window === 'undefined') return;
