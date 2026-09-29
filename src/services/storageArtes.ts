@@ -7,7 +7,14 @@
  * para o banco é só o endereço dela. Quem está com a tarefa aberta recebe esse
  * endereço na mesma hora, pelo mesmo caminho de qualquer outro campo.
  */
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import {
+  getStorage,
+  ref,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+  updateMetadata,
+} from 'firebase/storage';
 import { app } from '../firebase';
 import type { TaskFile } from '../types';
 import { getFileFromLocalDb } from '../utils/fileStorageDb';
@@ -58,9 +65,11 @@ export const enviarArteParaStorage = async (
   const alvo = ref(storage, storagePath);
   await uploadBytes(alvo, conteudo, {
     contentType: file.type || conteudo.type || 'application/octet-stream',
-    // Sem isto o navegador abre a imagem em vez de baixar quando alguém clica
-    // em "baixar"; com isto, os dois casos funcionam.
-    contentDisposition: `inline; filename*=UTF-8''${encodeURIComponent(file.name || 'arte')}`,
+    // "attachment" para o botão de baixar funcionar: o endereço do Storage não
+    // libera leitura por script (sem CORS), então baixar só acontece se o
+    // próprio arquivo disser que é para baixar. Exibir num <img> continua
+    // funcionando — isto não vale para imagem dentro de página.
+    contentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(file.name || 'arte')}`,
   });
   const url = await getDownloadURL(alvo);
   return { url, storagePath };
@@ -121,5 +130,23 @@ export const garantirArteNoStorage = async (
     return await enviarArteParaStorage(taskId, file, conteudo);
   } finally {
     subindo.delete(file.id);
+  }
+};
+
+/**
+ * Faz a arte baixar em vez de abrir numa aba.
+ *
+ * As artes enviadas antes desta correção foram marcadas como "abrir na
+ * página", e o botão de baixar só abria a imagem. Aqui a marca é corrigida na
+ * primeira vez que alguém tenta baixar — depois disso, baixa direto.
+ */
+export const prepararDownloadDaArte = async (storagePath?: string, nome?: string): Promise<void> => {
+  if (!storagePath) return;
+  try {
+    await updateMetadata(ref(storage, storagePath), {
+      contentDisposition: `attachment; filename*=UTF-8''${encodeURIComponent(nome || 'arte')}`,
+    });
+  } catch {
+    /* sem permissão ou já corrigida: o download segue do mesmo jeito */
   }
 };

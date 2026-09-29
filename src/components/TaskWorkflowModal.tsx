@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { uploadTaskFileToCloud, loadTaskFileDataUrl, reenviarArte } from '../services/taskFileCloudSync';
-import { enviarArteParaStorage } from '../services/storageArtes';
+import { enviarArteParaStorage, prepararDownloadDaArte } from '../services/storageArtes';
 import { esquecerArte } from '../hooks/useTaskFileSrc';
 import { impedirRecarga } from '../lib/atualizacao';
 import { ArteDaTarefa, ehArteExibivel } from './ArteDaTarefa';
@@ -91,6 +91,7 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   const [copiedCaption, setCopiedCaption] = useState(false);
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const cliqueComecouNoFundo = useRef(false);
   const [previewMediaUrl, setPreviewMediaUrl] = useState<string | null>(null);
   const [previewMediaName, setPreviewMediaName] = useState<string>('');
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -298,34 +299,34 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-    } else {
-      fetch(fileUrl)
-        .then((res) => res.blob())
-        .then((blob) => {
-          const blobUrl = URL.createObjectURL(blob);
-          link.href = blobUrl;
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
-        })
-        .catch(() => {
-          link.href = fileUrl;
-          link.target = '_blank';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-        });
+      return;
     }
+
+    // Arte no Storage: o endereço não libera leitura por script, então buscar
+    // o arquivo aqui falhava e o botão acabava só abrindo a imagem numa aba.
+    // Corrigimos a marca do arquivo e deixamos o navegador baixar direto.
+    await prepararDownloadDaArte((file as { storagePath?: string }).storagePath, filename);
+    link.href = fileUrl;
+    link.rel = 'noopener';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const abrirPreview = async (file: any) => {
     setPreviewMediaName(file.name);
-    const url =
-      (file.dataUrl || '').startsWith('data:')
-        ? file.dataUrl
-        : (await loadTaskFileDataUrl(file, task?.id)) || file.url || null;
-    setPreviewMediaUrl(url);
+    // Endereço do Storage abre na hora. Buscar no banco local e remontar os
+    // pedaços antes disso era o que fazia a arte demorar segundos para
+    // aparecer — agora esse caminho é só para as artes antigas.
+    if ((file.dataUrl || '').startsWith('data:')) {
+      setPreviewMediaUrl(file.dataUrl);
+      return;
+    }
+    if (file.url) {
+      setPreviewMediaUrl(file.url);
+      return;
+    }
+    setPreviewMediaUrl((await loadTaskFileDataUrl(file, task?.id)) || null);
   };
 
   // Download all files individually without zipping
@@ -588,7 +589,18 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   return (
     <div
       id="task-modal-backdrop"
-      onClick={handleCloseModal}
+      // Fecha só quando o clique começa E termina no fundo.
+      //
+      // Antes bastava o clique terminar aqui: ao clicar num campo que
+      // desaparece e volta entre apertar e soltar o botão — o briefing, ao
+      // salvar —, o navegador entrega o clique ao fundo e a tarefa fechava
+      // sozinha. Selecionar texto e soltar o mouse fora tinha o mesmo efeito.
+      onMouseDown={(e) => {
+        cliqueComecouNoFundo.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && cliqueComecouNoFundo.current) handleCloseModal();
+      }}
       className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6 bg-slate-950/55 overflow-y-auto"
     >
       {/* Modal Container */}

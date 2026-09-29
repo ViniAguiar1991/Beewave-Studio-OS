@@ -328,6 +328,17 @@ const shiftDays = (n: number) => {
 
 const DONE_STATUSES = ['aprovado', 'postado'];
 
+/**
+ * Etapa que encerra a pauta: aprovada, postada, ou qualquer etapa que a
+ * agência tenha criado dentro do grupo "Concluído". Sem olhar o grupo, uma
+ * etapa própria chamada "Publicado" continuava contando como atrasada.
+ */
+const etapaConcluida = (status: string | undefined, ctx: EvalContext): boolean => {
+  if (!status) return false;
+  if (DONE_STATUSES.includes(status)) return true;
+  return ctx.statuses?.find((s) => s.key === status)?.group === 'done';
+};
+
 /** Valor bruto de um campo numa tarefa, já normalizado para comparação. */
 export const readField = (task: Task, fieldId: string, ctx: EvalContext): unknown => {
   if (isCustomField(fieldId)) {
@@ -367,7 +378,7 @@ export const readField = (task: Task, fieldId: string, ctx: EvalContext): unknow
       return Math.round((task.timeSpent || 0) / 60);
     case 'isOverdue': {
       const d = dayOf(task.postDate || task.date);
-      return !!d && d < todayKey() && !DONE_STATUSES.includes(task.status);
+      return !!d && d < todayKey() && !etapaConcluida(task.status, ctx);
     }
     default:
       return null;
@@ -496,11 +507,7 @@ export const evaluateCondition = (
       return raw === todayKey();
     case 'isOverdue':
       // "Já passou" só conta enquanto a pauta não foi concluída.
-      return (
-        typeof raw === 'string' &&
-        raw < todayKey() &&
-        !DONE_STATUSES.includes(task.status)
-      );
+      return typeof raw === 'string' && raw < todayKey() && !etapaConcluida(task.status, ctx);
     case 'before':
       return typeof raw === 'string' && !!value && raw < String(value);
     case 'after':

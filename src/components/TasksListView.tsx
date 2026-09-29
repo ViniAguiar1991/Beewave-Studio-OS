@@ -94,7 +94,10 @@ const passaNoPeriodo = (
   const dia = (t.postDate || t.date || '').split('T')[0];
 
   if (filtro === 'sem_data') return !dia;
-  if (!dia) return false;
+  // Pauta sem data continua na lista, no fim da fila pela ordenação. Sumir
+  // dela ao escolher um período escondia trabalho que ninguém agendou ainda.
+  // A exceção é "Atrasados": sem data não há atraso.
+  if (!dia) return filtro !== 'atrasados';
 
   const hoje = new Date();
   const hojeK = chaveDia(hoje);
@@ -107,8 +110,12 @@ const passaNoPeriodo = (
       amanha.setDate(hoje.getDate() + 1);
       return dia === chaveDia(amanha);
     }
-    case 'esta_semana':
-      return dia >= hojeK && dia <= semanaDe(hoje).fimChave;
+    case 'esta_semana': {
+      // A semana inteira, de segunda a domingo — inclusive o que já passou.
+      // Antes começava em hoje, então ontem sumia da "esta semana".
+      const s = semanaDe(hoje);
+      return dia >= s.inicioChave && dia <= s.fimChave;
+    }
     case 'este_mes': {
       const fim = chaveDia(new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0));
       return dia >= hojeK && dia <= fim;
@@ -589,6 +596,7 @@ export const TasksListView: React.FC<TasksListViewProps> = ({
             })
           }
           onSetCustomField={setTaskCustomField}
+          onChangeStatus={(taskId, status) => setTaskStatus(taskId, status as TaskStatusKey)}
           onDuplicateTask={duplicateTask}
           onDeleteTask={(id) => {
             const t = tasks.find((x) => x.id === id);
