@@ -498,14 +498,10 @@ export async function loadTaskFileDataUrl(file: TaskFile, taskId?: string): Prom
 
   const busca = (async () => {
     const local = await getFileFromLocalDb(file.id);
-    if (local && local.startsWith('data:')) {
-      if (!isCloudSyncDisabled()) {
-        garantirArquivoNaNuvem(taskId, { ...file, dataUrl: local }, { soSeConferir: true }).catch((err) =>
-          console.warn(`Não foi possível reparar ${file.name} na nuvem:`, err)
-        );
-      }
-      return local;
-    }
+    // A cópia local volta direto. Conferir e regravar os pedaços no banco aqui
+    // era um dos caminhos que mantinham o "pendente" aceso: a arte agora vai
+    // para o Storage (`garantirArteNoStorage`), não em pedaços.
+    if (local && local.startsWith('data:')) return local;
 
     // Já conferida nesta sessão e incompleta: espera a escuta avisar.
     if (faltando.has(file.id)) return null;

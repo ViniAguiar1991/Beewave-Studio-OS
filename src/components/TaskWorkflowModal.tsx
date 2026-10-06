@@ -282,32 +282,45 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
   }, [previewMediaUrl, showDeleteConfirm, isAssigneeDropdownOpen, handleCloseModal]);
 
   // Download single file helper
-  const downloadSingleFile = async (file: { id?: string; name: string; url?: string; dataUrl?: string; type?: string; size?: number }) => {
-    // A cópia da memória pode ter sumido; a arte segue no IndexedDB e na nuvem.
-    const recuperada =
-      file.id && !(file.dataUrl || '').startsWith('data:')
-        ? await loadTaskFileDataUrl(file as any, task?.id)
-        : null;
-    const fileUrl = recuperada || file.dataUrl || file.url;
-    if (!fileUrl) return;
+  const downloadSingleFile = async (file: {
+    id?: string;
+    name: string;
+    url?: string;
+    dataUrl?: string;
+    storagePath?: string;
+    type?: string;
+    size?: number;
+  }) => {
     const filename = file.name || 'arte';
-    const link = document.createElement('a');
-    link.download = filename;
 
-    if (fileUrl.startsWith('data:') || fileUrl.startsWith('blob:')) {
-      link.href = fileUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+    // Arte no Storage: baixa direto pelo endereço.
+    //
+    // Antes o botão ia primeiro procurar a arte no banco antigo de pedaços —
+    // onde arte do Storage não existe —, e o download não acontecia. Agora
+    // usa o endereço na hora. O arquivo vem marcado como "baixar", e um
+    // quadro invisível faz o navegador salvar sem sair da página e sem
+    // precisar ler o arquivo por script (o Storage não libera isso).
+    if (file.url && /^https?:/.test(file.url)) {
+      // Artes enviadas antes da correção estavam marcadas como "abrir".
+      await prepararDownloadDaArte(file.storagePath, filename);
+      const quadro = document.createElement('iframe');
+      quadro.style.display = 'none';
+      quadro.src = file.url;
+      document.body.appendChild(quadro);
+      window.setTimeout(() => quadro.remove(), 60_000);
       return;
     }
 
-    // Arte no Storage: o endereço não libera leitura por script, então buscar
-    // o arquivo aqui falhava e o botão acabava só abrindo a imagem numa aba.
-    // Corrigimos a marca do arquivo e deixamos o navegador baixar direto.
-    await prepararDownloadDaArte((file as { storagePath?: string }).storagePath, filename);
-    link.href = fileUrl;
-    link.rel = 'noopener';
+    // Arte antiga, sem endereço: vem da memória, do banco local ou dos pedaços.
+    const conteudo = (file.dataUrl || '').startsWith('data:')
+      ? file.dataUrl
+      : file.id
+        ? await loadTaskFileDataUrl(file as any, task?.id)
+        : null;
+    if (!conteudo) return;
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = conteudo;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1264,7 +1277,12 @@ export const TaskWorkflowModal: React.FC<TaskWorkflowModalProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                downloadSingleFile({ id: '', name: previewMediaName, url: previewMediaUrl });
+                const original = files.find((f) => f.name === previewMediaName);
+                downloadSingleFile(
+                  original && original.url
+                    ? original
+                    : { id: '', name: previewMediaName, url: previewMediaUrl, dataUrl: previewMediaUrl }
+                );
               }}
               className="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
               title="Baixar arte original"

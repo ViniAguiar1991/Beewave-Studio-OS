@@ -18,6 +18,7 @@ import {
 import { app } from '../firebase';
 import type { TaskFile } from '../types';
 import { getFileFromLocalDb } from '../utils/fileStorageDb';
+import { loadTaskFileDataUrl } from './taskFileCloudSync';
 
 const storage = getStorage(app);
 
@@ -118,15 +119,18 @@ export const garantirArteNoStorage = async (
   file: TaskFile,
 ): Promise<{ url: string; storagePath: string } | null> => {
   if (!file?.id || file.url || subindo.has(file.id)) return null;
-  const dataUrl = file.dataUrl?.startsWith('data:')
-    ? file.dataUrl
-    : await getFileFromLocalDb(file.id);
-  if (!dataUrl?.startsWith('data:')) return null;
-  const conteudo = bytesDoDataUrl(dataUrl);
-  if (!conteudo) return null;
-
   subindo.add(file.id);
   try {
+    // Ordem: memória, banco local deste computador e, por último, os pedaços
+    // no banco antigo. Sem o último passo, só quem enviou a arte conseguia
+    // levá-la para o Storage — e as artes antigas ficavam com "Enviar de novo"
+    // para todo o resto da equipe, mesmo inteiras na nuvem.
+    const dataUrl = file.dataUrl?.startsWith('data:')
+      ? file.dataUrl
+      : (await getFileFromLocalDb(file.id)) || (await loadTaskFileDataUrl(file, taskId));
+    if (!dataUrl?.startsWith('data:')) return null;
+    const conteudo = bytesDoDataUrl(dataUrl);
+    if (!conteudo) return null;
     return await enviarArteParaStorage(taskId, file, conteudo);
   } finally {
     subindo.delete(file.id);
